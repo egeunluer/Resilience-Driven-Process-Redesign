@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# JetBrains IDE
+.idea/
+
+# Event logs (large binary/data files — too big for GitHub)
+Event Logs/*.xes
+Event Logs/*.csv
+
+# RIMS_DRL runtime artifacts
+Modules 2-3/RIMS_DRL-main/example/
+Modules 2-3/RIMS_DRL-main/figures and presentations/
+Modules 2-3/RIMS_DRL-main/log_file.txt
+Modules 2-3/RIMS_DRL_Agent_Briefing.md

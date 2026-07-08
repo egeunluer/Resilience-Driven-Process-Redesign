@@ -1,0 +1,1552 @@
+{
+  "activity_tiers": {
+    "W_Afhandelen leads": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "10138",
+          "10228",
+          "10863",
+          "10914",
+          "10931",
+          "10932",
+          "10972",
+          "11000",
+          "11002",
+          "11009",
+          "11019",
+          "11121",
+          "11201",
+          "11302"
+        ],
+        "mean_processing_time_s": 201.9594285714286
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "10629",
+          "10861",
+          "10889",
+          "10909",
+          "10933",
+          "10935",
+          "11001",
+          "11122",
+          "11169",
+          "11179",
+          "11180",
+          "11189",
+          "11203"
+        ],
+        "mean_processing_time_s": 117.81869230769233
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "10609",
+          "10809",
+          "10881",
+          "10910",
+          "10912",
+          "10913",
+          "10929",
+          "10939",
+          "10982",
+          "11003",
+          "11119",
+          "11181",
+          "11259"
+        ],
+        "mean_processing_time_s": 79.91315384615385
+      }
+    },
+    "W_Completeren aanvraag": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "10138",
+          "10629",
+          "10809",
+          "10889",
+          "10912",
+          "10929",
+          "10931",
+          "10932",
+          "10935",
+          "10939",
+          "10972",
+          "11002",
+          "11009",
+          "11079",
+          "11169",
+          "11189"
+        ],
+        "mean_processing_time_s": 3708.5426874999994
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "10228",
+          "10863",
+          "10881",
+          "10910",
+          "10913",
+          "10914",
+          "10933",
+          "11000",
+          "11001",
+          "11019",
+          "11119",
+          "11122",
+          "11179",
+          "11201",
+          "11300",
+          "11319"
+        ],
+        "mean_processing_time_s": 171.5316875
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "10609",
+          "10779",
+          "10861",
+          "10899",
+          "10909",
+          "10982",
+          "11003",
+          "11049",
+          "11121",
+          "11180",
+          "11181",
+          "11203",
+          "11299",
+          "11302",
+          "11309"
+        ],
+        "mean_processing_time_s": 99.13813333333334
+      }
+    },
+    "W_Nabellen incomplete dossiers": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "10228",
+          "10863",
+          "10914",
+          "10929",
+          "10931",
+          "10933",
+          "10939",
+          "11009",
+          "11019",
+          "11119",
+          "11169",
+          "11179",
+          "11180",
+          "11181",
+          "11189",
+          "11309"
+        ],
+        "mean_processing_time_s": 289.07603124999997
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "10881",
+          "10889",
+          "10909",
+          "10913",
+          "10932",
+          "10935",
+          "10972",
+          "11000",
+          "11002",
+          "11003",
+          "11079",
+          "11121",
+          "11122",
+          "11201",
+          "11203",
+          "11302"
+        ],
+        "mean_processing_time_s": 163.9890625
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "10138",
+          "10609",
+          "10629",
+          "10789",
+          "10809",
+          "10861",
+          "10899",
+          "10910",
+          "10912",
+          "10982",
+          "11049",
+          "11259",
+          "11289",
+          "11299",
+          "11300"
+        ],
+        "mean_processing_time_s": 71.84523333333333
+      }
+    },
+    "W_Nabellen offertes": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "10228",
+          "10809",
+          "10889",
+          "10912",
+          "10913",
+          "10914",
+          "10931",
+          "10932",
+          "10935",
+          "11000",
+          "11019",
+          "11169",
+          "11189",
+          "11203",
+          "11299",
+          "11300",
+          "11309"
+        ],
+        "mean_processing_time_s": 191.2561764705882
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "10863",
+          "10881",
+          "10909",
+          "10929",
+          "10933",
+          "10939",
+          "11002",
+          "11003",
+          "11009",
+          "11119",
+          "11121",
+          "11122",
+          "11181",
+          "11201",
+          "11302",
+          "11319"
+        ],
+        "mean_processing_time_s": 114.81296875
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "10138",
+          "10609",
+          "10629",
+          "10779",
+          "10789",
+          "10861",
+          "10899",
+          "10910",
+          "10972",
+          "10982",
+          "11001",
+          "11049",
+          "11179",
+          "11180",
+          "11259",
+          "11289"
+        ],
+        "mean_processing_time_s": 45.9620625
+      }
+    },
+    "W_Valideren aanvraag": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "10138",
+          "10609",
+          "10629",
+          "10809",
+          "10863",
+          "10912",
+          "10972",
+          "11009",
+          "11079",
+          "11169",
+          "11289",
+          "11339"
+        ],
+        "mean_processing_time_s": 6808.824333333333
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "10228",
+          "10779",
+          "10881",
+          "10889",
+          "10929",
+          "10932",
+          "10935",
+          "10982",
+          "11121",
+          "11122",
+          "11181",
+          "11300"
+        ],
+        "mean_processing_time_s": 93.40108333333332
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "10789",
+          "10861",
+          "10899",
+          "10909",
+          "10910",
+          "10913",
+          "11003",
+          "11049",
+          "11119",
+          "11180",
+          "11259"
+        ],
+        "mean_processing_time_s": 32.458954545454546
+      }
+    },
+    "W_Beoordelen fraude": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "10779",
+          "10809"
+        ],
+        "mean_processing_time_s": 18.1525
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "11304"
+        ],
+        "mean_processing_time_s": 12.212
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "10188"
+        ],
+        "mean_processing_time_s": 7.865
+      }
+    }
+  },
+  "resource_tier_map": {
+    "11259": {
+      "W_Afhandelen leads": 2,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 2
+    },
+    "10809": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 0,
+      "W_Valideren aanvraag": 0,
+      "W_Beoordelen fraude": 0
+    },
+    "10881": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 1,
+      "W_Valideren aanvraag": 1
+    },
+    "10913": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 0,
+      "W_Valideren aanvraag": 2
+    },
+    "11003": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 1,
+      "W_Valideren aanvraag": 2
+    },
+    "11119": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 1,
+      "W_Valideren aanvraag": 2
+    },
+    "10910": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 2
+    },
+    "10929": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 1,
+      "W_Valideren aanvraag": 1
+    },
+    "11181": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 1,
+      "W_Valideren aanvraag": 1
+    },
+    "10939": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 1
+    },
+    "10982": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 1
+    },
+    "10609": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 0
+    },
+    "10912": {
+      "W_Afhandelen leads": 2,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 0,
+      "W_Valideren aanvraag": 0
+    },
+    "10935": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 0,
+      "W_Valideren aanvraag": 1
+    },
+    "10889": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 0,
+      "W_Valideren aanvraag": 1
+    },
+    "11179": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 2
+    },
+    "11001": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen offertes": 2
+    },
+    "10629": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 0
+    },
+    "11189": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 0
+    },
+    "10933": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 1
+    },
+    "11203": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 0
+    },
+    "10861": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 2
+    },
+    "11122": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 1,
+      "W_Valideren aanvraag": 1
+    },
+    "11169": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 0,
+      "W_Valideren aanvraag": 0
+    },
+    "10909": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 1,
+      "W_Valideren aanvraag": 2
+    },
+    "11180": {
+      "W_Afhandelen leads": 1,
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 2
+    },
+    "11019": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 0
+    },
+    "11009": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 1,
+      "W_Valideren aanvraag": 0
+    },
+    "10972": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 0
+    },
+    "11121": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 1,
+      "W_Valideren aanvraag": 1
+    },
+    "10932": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 0,
+      "W_Valideren aanvraag": 1
+    },
+    "10228": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 0,
+      "W_Valideren aanvraag": 1
+    },
+    "11201": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 1
+    },
+    "10138": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 0
+    },
+    "11000": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 0
+    },
+    "10914": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 0
+    },
+    "10863": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 1,
+      "W_Valideren aanvraag": 0
+    },
+    "11302": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 1
+    },
+    "10931": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 0
+    },
+    "11002": {
+      "W_Afhandelen leads": 0,
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Nabellen offertes": 1
+    },
+    "10779": {
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 1,
+      "W_Beoordelen fraude": 0
+    },
+    "10899": {
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 2
+    },
+    "11309": {
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 0,
+      "W_Nabellen offertes": 0
+    },
+    "11049": {
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 2
+    },
+    "11299": {
+      "W_Completeren aanvraag": 2,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 0
+    },
+    "11319": {
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen offertes": 1
+    },
+    "11300": {
+      "W_Completeren aanvraag": 1,
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 0,
+      "W_Valideren aanvraag": 1
+    },
+    "11079": {
+      "W_Completeren aanvraag": 0,
+      "W_Nabellen incomplete dossiers": 1,
+      "W_Valideren aanvraag": 0
+    },
+    "11289": {
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 0
+    },
+    "10789": {
+      "W_Nabellen incomplete dossiers": 2,
+      "W_Nabellen offertes": 2,
+      "W_Valideren aanvraag": 2
+    },
+    "11339": {
+      "W_Valideren aanvraag": 0
+    },
+    "10188": {
+      "W_Beoordelen fraude": 2
+    },
+    "11304": {
+      "W_Beoordelen fraude": 1
+    }
+  },
+  "resource_processing_times": {
+    "10138": {
+      "W_Afhandelen leads": 172.2965,
+      "W_Completeren aanvraag": 261.462,
+      "W_Nabellen incomplete dossiers": 89.936,
+      "W_Nabellen offertes": 24.2455,
+      "W_Valideren aanvraag": 693.712
+    },
+    "10188": {
+      "W_Beoordelen fraude": 7.865
+    },
+    "10228": {
+      "W_Afhandelen leads": 161.61599999999999,
+      "W_Completeren aanvraag": 169.116,
+      "W_Nabellen incomplete dossiers": 803.654,
+      "W_Nabellen offertes": 580.616,
+      "W_Valideren aanvraag": 95.80199999999999
+    },
+    "10609": {
+      "W_Afhandelen leads": 93.58500000000001,
+      "W_Completeren aanvraag": 36.204,
+      "W_Nabellen incomplete dossiers": 36.764,
+      "W_Nabellen offertes": 13.6075,
+      "W_Valideren aanvraag": 833.735
+    },
+    "10629": {
+      "W_Afhandelen leads": 109.586,
+      "W_Completeren aanvraag": 544.633,
+      "W_Nabellen incomplete dossiers": 63.01,
+      "W_Nabellen offertes": 18.948500000000003,
+      "W_Valideren aanvraag": 702.7655
+    },
+    "10779": {
+      "W_Beoordelen fraude": 21.967,
+      "W_Completeren aanvraag": 81.824,
+      "W_Nabellen offertes": 28.930999999999997,
+      "W_Valideren aanvraag": 118.28
+    },
+    "10789": {
+      "W_Nabellen incomplete dossiers": 50.327,
+      "W_Nabellen offertes": 16.942,
+      "W_Valideren aanvraag": 20.104
+    },
+    "10809": {
+      "W_Afhandelen leads": 70.2465,
+      "W_Beoordelen fraude": 14.338000000000001,
+      "W_Completeren aanvraag": 232.84,
+      "W_Nabellen incomplete dossiers": 85.4005,
+      "W_Nabellen offertes": 198.827,
+      "W_Valideren aanvraag": 733.8975
+    },
+    "10861": {
+      "W_Afhandelen leads": 126.00399999999999,
+      "W_Completeren aanvraag": 98.754,
+      "W_Nabellen incomplete dossiers": 118.614,
+      "W_Nabellen offertes": 98.83250000000001,
+      "W_Valideren aanvraag": 46.149
+    },
+    "10863": {
+      "W_Afhandelen leads": 228.386,
+      "W_Completeren aanvraag": 123.312,
+      "W_Nabellen incomplete dossiers": 221.54899999999998,
+      "W_Nabellen offertes": 110.39699999999999,
+      "W_Valideren aanvraag": 146.32250000000002
+    },
+    "10881": {
+      "W_Afhandelen leads": 73.5495,
+      "W_Completeren aanvraag": 144.162,
+      "W_Nabellen incomplete dossiers": 157.381,
+      "W_Nabellen offertes": 101.829,
+      "W_Valideren aanvraag": 87.048
+    },
+    "10889": {
+      "W_Afhandelen leads": 102.541,
+      "W_Completeren aanvraag": 299.029,
+      "W_Nabellen incomplete dossiers": 167.281,
+      "W_Nabellen offertes": 150.005,
+      "W_Valideren aanvraag": 68.297
+    },
+    "10899": {
+      "W_Completeren aanvraag": 83.355,
+      "W_Nabellen incomplete dossiers": 35.028,
+      "W_Nabellen offertes": 15.893,
+      "W_Valideren aanvraag": 34.316
+    },
+    "10909": {
+      "W_Afhandelen leads": 127.404,
+      "W_Completeren aanvraag": 119.327,
+      "W_Nabellen incomplete dossiers": 168.269,
+      "W_Nabellen offertes": 102.264,
+      "W_Valideren aanvraag": 43.879
+    },
+    "10910": {
+      "W_Afhandelen leads": 82.26750000000001,
+      "W_Completeren aanvraag": 162.57350000000002,
+      "W_Nabellen incomplete dossiers": 59.6655,
+      "W_Nabellen offertes": 75.106,
+      "W_Valideren aanvraag": 50.874
+    },
+    "10912": {
+      "W_Afhandelen leads": 95.671,
+      "W_Completeren aanvraag": 313.866,
+      "W_Nabellen incomplete dossiers": 116.802,
+      "W_Nabellen offertes": 143.655,
+      "W_Valideren aanvraag": 709.412
+    },
+    "10913": {
+      "W_Afhandelen leads": 77.0615,
+      "W_Completeren aanvraag": 209.99450000000002,
+      "W_Nabellen incomplete dossiers": 172.489,
+      "W_Nabellen offertes": 147.672,
+      "W_Valideren aanvraag": 8.046
+    },
+    "10914": {
+      "W_Afhandelen leads": 202.512,
+      "W_Completeren aanvraag": 221.1885,
+      "W_Nabellen incomplete dossiers": 355.061,
+      "W_Nabellen offertes": 139.194
+    },
+    "10929": {
+      "W_Afhandelen leads": 86.667,
+      "W_Completeren aanvraag": 244.3505,
+      "W_Nabellen incomplete dossiers": 213.686,
+      "W_Nabellen offertes": 121.814,
+      "W_Valideren aanvraag": 113.299
+    },
+    "10931": {
+      "W_Afhandelen leads": 248.302,
+      "W_Completeren aanvraag": 369.931,
+      "W_Nabellen incomplete dossiers": 241.92200000000003,
+      "W_Nabellen offertes": 176.841
+    },
+    "10932": {
+      "W_Afhandelen leads": 157.68900000000002,
+      "W_Completeren aanvraag": 276.10299999999995,
+      "W_Nabellen incomplete dossiers": 151.476,
+      "W_Nabellen offertes": 179.7575,
+      "W_Valideren aanvraag": 105.579
+    },
+    "10933": {
+      "W_Afhandelen leads": 119.234,
+      "W_Completeren aanvraag": 119.78049999999999,
+      "W_Nabellen incomplete dossiers": 229.9885,
+      "W_Nabellen offertes": 125.2895
+    },
+    "10935": {
+      "W_Afhandelen leads": 102.501,
+      "W_Completeren aanvraag": 466.852,
+      "W_Nabellen incomplete dossiers": 195.025,
+      "W_Nabellen offertes": 189.324,
+      "W_Valideren aanvraag": 87.724
+    },
+    "10939": {
+      "W_Afhandelen leads": 88.66550000000001,
+      "W_Completeren aanvraag": 254.686,
+      "W_Nabellen incomplete dossiers": 205.183,
+      "W_Nabellen offertes": 127.315
+    },
+    "10972": {
+      "W_Afhandelen leads": 156.396,
+      "W_Completeren aanvraag": 226.90300000000002,
+      "W_Nabellen incomplete dossiers": 140.788,
+      "W_Nabellen offertes": 22.813,
+      "W_Valideren aanvraag": 809.02
+    },
+    "10982": {
+      "W_Afhandelen leads": 92.29400000000001,
+      "W_Completeren aanvraag": 105.737,
+      "W_Nabellen incomplete dossiers": 78.80199999999999,
+      "W_Nabellen offertes": 77.996,
+      "W_Valideren aanvraag": 70.776
+    },
+    "11000": {
+      "W_Afhandelen leads": 180.914,
+      "W_Completeren aanvraag": 211.707,
+      "W_Nabellen incomplete dossiers": 198.038,
+      "W_Nabellen offertes": 144.499
+    },
+    "11001": {
+      "W_Afhandelen leads": 109.0,
+      "W_Completeren aanvraag": 204.224,
+      "W_Nabellen offertes": 54.042
+    },
+    "11002": {
+      "W_Afhandelen leads": 469.951,
+      "W_Completeren aanvraag": 308.27049999999997,
+      "W_Nabellen incomplete dossiers": 200.341,
+      "W_Nabellen offertes": 131.8825
+    },
+    "11003": {
+      "W_Afhandelen leads": 81.2145,
+      "W_Completeren aanvraag": 113.44200000000001,
+      "W_Nabellen incomplete dossiers": 121.164,
+      "W_Nabellen offertes": 111.36500000000001,
+      "W_Valideren aanvraag": 23.849
+    },
+    "11009": {
+      "W_Afhandelen leads": 140.597,
+      "W_Completeren aanvraag": 309.238,
+      "W_Nabellen incomplete dossiers": 243.54,
+      "W_Nabellen offertes": 105.048,
+      "W_Valideren aanvraag": 128.6295
+    },
+    "11019": {
+      "W_Afhandelen leads": 135.96550000000002,
+      "W_Completeren aanvraag": 218.7355,
+      "W_Nabellen incomplete dossiers": 268.684,
+      "W_Nabellen offertes": 208.947
+    },
+    "11049": {
+      "W_Completeren aanvraag": 100.987,
+      "W_Nabellen incomplete dossiers": 53.1875,
+      "W_Nabellen offertes": 50.214,
+      "W_Valideren aanvraag": 40.888
+    },
+    "11079": {
+      "W_Completeren aanvraag": 54519.3805,
+      "W_Nabellen incomplete dossiers": 131.5775,
+      "W_Valideren aanvraag": 74655.419
+    },
+    "11119": {
+      "W_Afhandelen leads": 81.36,
+      "W_Completeren aanvraag": 131.61,
+      "W_Nabellen incomplete dossiers": 310.552,
+      "W_Nabellen offertes": 131.57999999999998,
+      "W_Valideren aanvraag": 12.388
+    },
+    "11121": {
+      "W_Afhandelen leads": 157.46949999999998,
+      "W_Completeren aanvraag": 107.072,
+      "W_Nabellen incomplete dossiers": 125.714,
+      "W_Nabellen offertes": 100.2065,
+      "W_Valideren aanvraag": 73.457
+    },
+    "11122": {
+      "W_Afhandelen leads": 126.9155,
+      "W_Completeren aanvraag": 202.652,
+      "W_Nabellen incomplete dossiers": 190.034,
+      "W_Nabellen offertes": 124.668,
+      "W_Valideren aanvraag": 104.15950000000001
+    },
+    "11169": {
+      "W_Afhandelen leads": 127.275,
+      "W_Completeren aanvraag": 407.4495,
+      "W_Nabellen incomplete dossiers": 309.071,
+      "W_Nabellen offertes": 195.638,
+      "W_Valideren aanvraag": 146.269
+    },
+    "11179": {
+      "W_Afhandelen leads": 106.4855,
+      "W_Completeren aanvraag": 129.3845,
+      "W_Nabellen incomplete dossiers": 207.318,
+      "W_Nabellen offertes": 94.173
+    },
+    "11180": {
+      "W_Afhandelen leads": 134.911,
+      "W_Completeren aanvraag": 109.922,
+      "W_Nabellen incomplete dossiers": 273.756,
+      "W_Nabellen offertes": 95.20849999999999,
+      "W_Valideren aanvraag": 10.4635
+    },
+    "11181": {
+      "W_Afhandelen leads": 87.166,
+      "W_Completeren aanvraag": 108.818,
+      "W_Nabellen incomplete dossiers": 216.536,
+      "W_Nabellen offertes": 113.3725,
+      "W_Valideren aanvraag": 72.712
+    },
+    "11189": {
+      "W_Afhandelen leads": 115.535,
+      "W_Completeren aanvraag": 301.689,
+      "W_Nabellen incomplete dossiers": 248.22,
+      "W_Nabellen offertes": 142.983
+    },
+    "11201": {
+      "W_Afhandelen leads": 172.145,
+      "W_Completeren aanvraag": 121.279,
+      "W_Nabellen incomplete dossiers": 133.4275,
+      "W_Nabellen offertes": 99.572
+    },
+    "11203": {
+      "W_Afhandelen leads": 124.251,
+      "W_Completeren aanvraag": 118.913,
+      "W_Nabellen incomplete dossiers": 196.181,
+      "W_Nabellen offertes": 133.693
+    },
+    "11259": {
+      "W_Afhandelen leads": 29.123,
+      "W_Nabellen incomplete dossiers": 48.033,
+      "W_Nabellen offertes": 16.056,
+      "W_Valideren aanvraag": 66.092
+    },
+    "11289": {
+      "W_Nabellen incomplete dossiers": 49.650000000000006,
+      "W_Nabellen offertes": 32.3845,
+      "W_Valideren aanvraag": 1268.216
+    },
+    "11299": {
+      "W_Completeren aanvraag": 118.621,
+      "W_Nabellen incomplete dossiers": 81.506,
+      "W_Nabellen offertes": 169.50900000000001
+    },
+    "11300": {
+      "W_Completeren aanvraag": 194.886,
+      "W_Nabellen incomplete dossiers": 110.953,
+      "W_Nabellen offertes": 141.8225,
+      "W_Valideren aanvraag": 123.67949999999999
+    },
+    "11302": {
+      "W_Afhandelen leads": 243.1925,
+      "W_Completeren aanvraag": 99.065,
+      "W_Nabellen incomplete dossiers": 174.639,
+      "W_Nabellen offertes": 127.321
+    },
+    "11304": {
+      "W_Beoordelen fraude": 12.212
+    },
+    "11309": {
+      "W_Completeren aanvraag": 85.031,
+      "W_Nabellen incomplete dossiers": 276.496,
+      "W_Nabellen offertes": 208.372
+    },
+    "11319": {
+      "W_Completeren aanvraag": 179.902,
+      "W_Nabellen offertes": 103.0835
+    },
+    "11339": {
+      "W_Valideren aanvraag": 878.4939999999999
+    }
+  },
+  "support_counts": {
+    "10138": {
+      "W_Afhandelen leads": 4,
+      "W_Completeren aanvraag": 12,
+      "W_Nabellen incomplete dossiers": 152,
+      "W_Nabellen offertes": 28,
+      "W_Valideren aanvraag": 1706
+    },
+    "10188": {
+      "W_Beoordelen fraude": 211
+    },
+    "10228": {
+      "W_Afhandelen leads": 110,
+      "W_Completeren aanvraag": 71,
+      "W_Nabellen incomplete dossiers": 7,
+      "W_Nabellen offertes": 4,
+      "W_Valideren aanvraag": 6
+    },
+    "10609": {
+      "W_Afhandelen leads": 18,
+      "W_Completeren aanvraag": 21,
+      "W_Nabellen incomplete dossiers": 339,
+      "W_Nabellen offertes": 94,
+      "W_Valideren aanvraag": 1679
+    },
+    "10629": {
+      "W_Afhandelen leads": 83,
+      "W_Completeren aanvraag": 37,
+      "W_Nabellen incomplete dossiers": 123,
+      "W_Nabellen offertes": 44,
+      "W_Valideren aanvraag": 992
+    },
+    "10779": {
+      "W_Beoordelen fraude": 3,
+      "W_Completeren aanvraag": 17,
+      "W_Nabellen offertes": 4,
+      "W_Valideren aanvraag": 9
+    },
+    "10789": {
+      "W_Nabellen incomplete dossiers": 127,
+      "W_Nabellen offertes": 267,
+      "W_Valideren aanvraag": 6
+    },
+    "10809": {
+      "W_Afhandelen leads": 18,
+      "W_Beoordelen fraude": 36,
+      "W_Completeren aanvraag": 20,
+      "W_Nabellen incomplete dossiers": 274,
+      "W_Nabellen offertes": 28,
+      "W_Valideren aanvraag": 988
+    },
+    "10861": {
+      "W_Afhandelen leads": 192,
+      "W_Completeren aanvraag": 1235,
+      "W_Nabellen incomplete dossiers": 261,
+      "W_Nabellen offertes": 912,
+      "W_Valideren aanvraag": 29
+    },
+    "10863": {
+      "W_Afhandelen leads": 199,
+      "W_Completeren aanvraag": 477,
+      "W_Nabellen incomplete dossiers": 124,
+      "W_Nabellen offertes": 276,
+      "W_Valideren aanvraag": 4
+    },
+    "10881": {
+      "W_Afhandelen leads": 176,
+      "W_Completeren aanvraag": 321,
+      "W_Nabellen incomplete dossiers": 255,
+      "W_Nabellen offertes": 689,
+      "W_Valideren aanvraag": 8
+    },
+    "10889": {
+      "W_Afhandelen leads": 211,
+      "W_Completeren aanvraag": 289,
+      "W_Nabellen incomplete dossiers": 101,
+      "W_Nabellen offertes": 471,
+      "W_Valideren aanvraag": 7
+    },
+    "10899": {
+      "W_Completeren aanvraag": 5,
+      "W_Nabellen incomplete dossiers": 384,
+      "W_Nabellen offertes": 794,
+      "W_Valideren aanvraag": 32
+    },
+    "10909": {
+      "W_Afhandelen leads": 195,
+      "W_Completeren aanvraag": 693,
+      "W_Nabellen incomplete dossiers": 432,
+      "W_Nabellen offertes": 1013,
+      "W_Valideren aanvraag": 23
+    },
+    "10910": {
+      "W_Afhandelen leads": 446,
+      "W_Completeren aanvraag": 556,
+      "W_Nabellen incomplete dossiers": 272,
+      "W_Nabellen offertes": 161,
+      "W_Valideren aanvraag": 5
+    },
+    "10912": {
+      "W_Afhandelen leads": 79,
+      "W_Completeren aanvraag": 380,
+      "W_Nabellen incomplete dossiers": 103,
+      "W_Nabellen offertes": 163,
+      "W_Valideren aanvraag": 8
+    },
+    "10913": {
+      "W_Afhandelen leads": 188,
+      "W_Completeren aanvraag": 712,
+      "W_Nabellen incomplete dossiers": 709,
+      "W_Nabellen offertes": 880,
+      "W_Valideren aanvraag": 13
+    },
+    "10914": {
+      "W_Afhandelen leads": 4,
+      "W_Completeren aanvraag": 40,
+      "W_Nabellen incomplete dossiers": 37,
+      "W_Nabellen offertes": 67
+    },
+    "10929": {
+      "W_Afhandelen leads": 153,
+      "W_Completeren aanvraag": 338,
+      "W_Nabellen incomplete dossiers": 387,
+      "W_Nabellen offertes": 292,
+      "W_Valideren aanvraag": 14
+    },
+    "10931": {
+      "W_Afhandelen leads": 83,
+      "W_Completeren aanvraag": 168,
+      "W_Nabellen incomplete dossiers": 180,
+      "W_Nabellen offertes": 80
+    },
+    "10932": {
+      "W_Afhandelen leads": 220,
+      "W_Completeren aanvraag": 536,
+      "W_Nabellen incomplete dossiers": 275,
+      "W_Nabellen offertes": 244,
+      "W_Valideren aanvraag": 13
+    },
+    "10933": {
+      "W_Afhandelen leads": 51,
+      "W_Completeren aanvraag": 352,
+      "W_Nabellen incomplete dossiers": 30,
+      "W_Nabellen offertes": 220
+    },
+    "10935": {
+      "W_Afhandelen leads": 70,
+      "W_Completeren aanvraag": 29,
+      "W_Nabellen incomplete dossiers": 115,
+      "W_Nabellen offertes": 129,
+      "W_Valideren aanvraag": 6
+    },
+    "10939": {
+      "W_Afhandelen leads": 154,
+      "W_Completeren aanvraag": 389,
+      "W_Nabellen incomplete dossiers": 103,
+      "W_Nabellen offertes": 227
+    },
+    "10972": {
+      "W_Afhandelen leads": 7,
+      "W_Completeren aanvraag": 8,
+      "W_Nabellen incomplete dossiers": 171,
+      "W_Nabellen offertes": 33,
+      "W_Valideren aanvraag": 1413
+    },
+    "10982": {
+      "W_Afhandelen leads": 284,
+      "W_Completeren aanvraag": 743,
+      "W_Nabellen incomplete dossiers": 350,
+      "W_Nabellen offertes": 601,
+      "W_Valideren aanvraag": 17
+    },
+    "11000": {
+      "W_Afhandelen leads": 117,
+      "W_Completeren aanvraag": 452,
+      "W_Nabellen incomplete dossiers": 391,
+      "W_Nabellen offertes": 437
+    },
+    "11001": {
+      "W_Afhandelen leads": 35,
+      "W_Completeren aanvraag": 37,
+      "W_Nabellen offertes": 9
+    },
+    "11002": {
+      "W_Afhandelen leads": 18,
+      "W_Completeren aanvraag": 188,
+      "W_Nabellen incomplete dossiers": 339,
+      "W_Nabellen offertes": 200
+    },
+    "11003": {
+      "W_Afhandelen leads": 166,
+      "W_Completeren aanvraag": 530,
+      "W_Nabellen incomplete dossiers": 139,
+      "W_Nabellen offertes": 468,
+      "W_Valideren aanvraag": 8
+    },
+    "11009": {
+      "W_Afhandelen leads": 191,
+      "W_Completeren aanvraag": 322,
+      "W_Nabellen incomplete dossiers": 264,
+      "W_Nabellen offertes": 322,
+      "W_Valideren aanvraag": 8
+    },
+    "11019": {
+      "W_Afhandelen leads": 30,
+      "W_Completeren aanvraag": 580,
+      "W_Nabellen incomplete dossiers": 92,
+      "W_Nabellen offertes": 65
+    },
+    "11049": {
+      "W_Completeren aanvraag": 15,
+      "W_Nabellen incomplete dossiers": 708,
+      "W_Nabellen offertes": 875,
+      "W_Valideren aanvraag": 43
+    },
+    "11079": {
+      "W_Completeren aanvraag": 6,
+      "W_Nabellen incomplete dossiers": 4,
+      "W_Valideren aanvraag": 3
+    },
+    "11119": {
+      "W_Afhandelen leads": 149,
+      "W_Completeren aanvraag": 948,
+      "W_Nabellen incomplete dossiers": 155,
+      "W_Nabellen offertes": 1142,
+      "W_Valideren aanvraag": 5
+    },
+    "11121": {
+      "W_Afhandelen leads": 108,
+      "W_Completeren aanvraag": 640,
+      "W_Nabellen incomplete dossiers": 402,
+      "W_Nabellen offertes": 320,
+      "W_Valideren aanvraag": 5
+    },
+    "11122": {
+      "W_Afhandelen leads": 174,
+      "W_Completeren aanvraag": 741,
+      "W_Nabellen incomplete dossiers": 233,
+      "W_Nabellen offertes": 609,
+      "W_Valideren aanvraag": 10
+    },
+    "11169": {
+      "W_Afhandelen leads": 510,
+      "W_Completeren aanvraag": 1068,
+      "W_Nabellen incomplete dossiers": 659,
+      "W_Nabellen offertes": 217,
+      "W_Valideren aanvraag": 38
+    },
+    "11179": {
+      "W_Afhandelen leads": 78,
+      "W_Completeren aanvraag": 954,
+      "W_Nabellen incomplete dossiers": 91,
+      "W_Nabellen offertes": 295
+    },
+    "11180": {
+      "W_Afhandelen leads": 76,
+      "W_Completeren aanvraag": 1070,
+      "W_Nabellen incomplete dossiers": 173,
+      "W_Nabellen offertes": 1192,
+      "W_Valideren aanvraag": 14
+    },
+    "11181": {
+      "W_Afhandelen leads": 81,
+      "W_Completeren aanvraag": 1182,
+      "W_Nabellen incomplete dossiers": 506,
+      "W_Nabellen offertes": 1172,
+      "W_Valideren aanvraag": 12
+    },
+    "11189": {
+      "W_Afhandelen leads": 183,
+      "W_Completeren aanvraag": 957,
+      "W_Nabellen incomplete dossiers": 302,
+      "W_Nabellen offertes": 783
+    },
+    "11201": {
+      "W_Afhandelen leads": 49,
+      "W_Completeren aanvraag": 1195,
+      "W_Nabellen incomplete dossiers": 108,
+      "W_Nabellen offertes": 836
+    },
+    "11203": {
+      "W_Afhandelen leads": 143,
+      "W_Completeren aanvraag": 1181,
+      "W_Nabellen incomplete dossiers": 57,
+      "W_Nabellen offertes": 1004
+    },
+    "11259": {
+      "W_Afhandelen leads": 6,
+      "W_Nabellen incomplete dossiers": 391,
+      "W_Nabellen offertes": 893,
+      "W_Valideren aanvraag": 23
+    },
+    "11289": {
+      "W_Nabellen incomplete dossiers": 64,
+      "W_Nabellen offertes": 8,
+      "W_Valideren aanvraag": 661
+    },
+    "11299": {
+      "W_Completeren aanvraag": 143,
+      "W_Nabellen incomplete dossiers": 6,
+      "W_Nabellen offertes": 204
+    },
+    "11300": {
+      "W_Completeren aanvraag": 190,
+      "W_Nabellen incomplete dossiers": 5,
+      "W_Nabellen offertes": 156,
+      "W_Valideren aanvraag": 4
+    },
+    "11302": {
+      "W_Afhandelen leads": 12,
+      "W_Completeren aanvraag": 251,
+      "W_Nabellen incomplete dossiers": 15,
+      "W_Nabellen offertes": 117
+    },
+    "11304": {
+      "W_Beoordelen fraude": 19
+    },
+    "11309": {
+      "W_Completeren aanvraag": 192,
+      "W_Nabellen incomplete dossiers": 5,
+      "W_Nabellen offertes": 112
+    },
+    "11319": {
+      "W_Completeren aanvraag": 167,
+      "W_Nabellen offertes": 114
+    },
+    "11339": {
+      "W_Valideren aanvraag": 14
+    }
+  },
+  "excluded_pairs": [
+    {
+      "resource": "11169",
+      "activity": "W_Completeren aanvraag",
+      "reason": "zero_or_negative_true_pt"
+    },
+    {
+      "resource": "11169",
+      "activity": "W_Completeren aanvraag",
+      "reason": "zero_or_negative_true_pt"
+    },
+    {
+      "resource": "11169",
+      "activity": "W_Nabellen incomplete dossiers",
+      "reason": "zero_or_negative_true_pt"
+    },
+    {
+      "resource": "10881",
+      "activity": "W_Completeren aanvraag",
+      "reason": "zero_or_negative_true_pt"
+    },
+    {
+      "resource": "10124",
+      "activity": "W_Afhandelen leads",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "10124",
+      "activity": "W_Completeren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "10124",
+      "activity": "W_Nabellen offertes",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "10124",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "10125",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "10779",
+      "activity": "W_Afhandelen leads",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "10789",
+      "activity": "W_Completeren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "10821",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "10899",
+      "activity": "W_Afhandelen leads",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "10914",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "10931",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "10939",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "11000",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11001",
+      "activity": "W_Nabellen incomplete dossiers",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11002",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11019",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11079",
+      "activity": "W_Afhandelen leads",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11079",
+      "activity": "W_Nabellen offertes",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "11179",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11189",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "11201",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11203",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11254",
+      "activity": "W_Completeren aanvraag",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "11259",
+      "activity": "W_Completeren aanvraag",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "11269",
+      "activity": "W_Afhandelen leads",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11269",
+      "activity": "W_Nabellen incomplete dossiers",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11269",
+      "activity": "W_Nabellen offertes",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11289",
+      "activity": "W_Completeren aanvraag",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "11299",
+      "activity": "W_Afhandelen leads",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "11299",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11302",
+      "activity": "W_Valideren aanvraag",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11319",
+      "activity": "W_Afhandelen leads",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11319",
+      "activity": "W_Nabellen incomplete dossiers",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "11339",
+      "activity": "W_Beoordelen fraude",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "11339",
+      "activity": "W_Nabellen incomplete dossiers",
+      "reason": "support_2_below_n_min_3"
+    }
+  ],
+  "activities_at_risk": [
+    "W_Wijzigen contractgegevens"
+  ],
+  "config_used": {
+    "n_tiers": 3,
+    "n_min_support": 3,
+    "cap_percentile": 95.0,
+    "tiering_method": "quantile",
+    "processing_time_mode": "true",
+    "activity_prefix_filter": "W_",
+    "log_path": "../Event Logs/BPI_Challenge_2012.xes"
+  },
+  "summary": {
+    "n_resources": 53,
+    "n_activities": 6,
+    "n_eligible_pairs": 222,
+    "n_excluded_pairs": 39,
+    "n_activities_at_risk": 1
+  }
+}

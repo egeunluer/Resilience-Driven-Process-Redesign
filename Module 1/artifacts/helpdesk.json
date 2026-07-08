@@ -1,0 +1,1075 @@
+{
+  "activity_tiers": {
+    "Assign seriousness": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "Value 10",
+          "Value 16",
+          "Value 2",
+          "Value 6",
+          "Value 7"
+        ],
+        "mean_processing_time_s": 403190.4
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "Value 12",
+          "Value 13",
+          "Value 15",
+          "Value 4",
+          "Value 9"
+        ],
+        "mean_processing_time_s": 1567.0
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "Value 1",
+          "Value 11",
+          "Value 14",
+          "Value 8"
+        ],
+        "mean_processing_time_s": 79.625
+      }
+    },
+    "Require upgrade": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "Value 2",
+          "Value 9"
+        ],
+        "mean_processing_time_s": 569805.5
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "Value 4"
+        ],
+        "mean_processing_time_s": 147237.0
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "Value 1"
+        ],
+        "mean_processing_time_s": 62963.0
+      }
+    },
+    "Resolve ticket": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "Value 10",
+          "Value 13",
+          "Value 14",
+          "Value 18",
+          "Value 20",
+          "Value 21",
+          "Value 4"
+        ],
+        "mean_processing_time_s": 538730.2857142857
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "Value 1",
+          "Value 12",
+          "Value 15",
+          "Value 17",
+          "Value 2",
+          "Value 9"
+        ],
+        "mean_processing_time_s": 46595.666666666664
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "Value 11",
+          "Value 16",
+          "Value 19",
+          "Value 6",
+          "Value 7",
+          "Value 8"
+        ],
+        "mean_processing_time_s": 1786.5
+      }
+    },
+    "Take in charge ticket": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "Value 10",
+          "Value 18",
+          "Value 19",
+          "Value 2",
+          "Value 21",
+          "Value 3",
+          "Value 5"
+        ],
+        "mean_processing_time_s": 621555.6428571428
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "Value 11",
+          "Value 12",
+          "Value 14",
+          "Value 15",
+          "Value 16",
+          "Value 20",
+          "Value 9"
+        ],
+        "mean_processing_time_s": 98322.14285714286
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "Value 1",
+          "Value 13",
+          "Value 17",
+          "Value 4",
+          "Value 6",
+          "Value 7",
+          "Value 8"
+        ],
+        "mean_processing_time_s": 22403.785714285714
+      }
+    },
+    "Wait": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "Value 1",
+          "Value 13",
+          "Value 15",
+          "Value 20",
+          "Value 4",
+          "Value 6"
+        ],
+        "mean_processing_time_s": 199786.75
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "Value 10",
+          "Value 12",
+          "Value 14",
+          "Value 18",
+          "Value 2",
+          "Value 9"
+        ],
+        "mean_processing_time_s": 78067.5
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "Value 11",
+          "Value 16",
+          "Value 19",
+          "Value 5",
+          "Value 7",
+          "Value 8"
+        ],
+        "mean_processing_time_s": 9746.5
+      }
+    },
+    "Create SW anomaly": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "Value 14"
+        ],
+        "mean_processing_time_s": 97721.0
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "Value 2"
+        ],
+        "mean_processing_time_s": 19012.0
+      }
+    },
+    "Closed": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "Value 2",
+          "Value 5"
+        ],
+        "mean_processing_time_s": 3943066.0
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "Value 3"
+        ],
+        "mean_processing_time_s": 1296016.0
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "Value 21"
+        ],
+        "mean_processing_time_s": 34.5
+      }
+    }
+  },
+  "resource_tier_map": {
+    "Value 8": {
+      "Assign seriousness": 2,
+      "Resolve ticket": 2,
+      "Take in charge ticket": 2,
+      "Wait": 2
+    },
+    "Value 11": {
+      "Assign seriousness": 2,
+      "Resolve ticket": 2,
+      "Take in charge ticket": 1,
+      "Wait": 2
+    },
+    "Value 14": {
+      "Assign seriousness": 2,
+      "Resolve ticket": 0,
+      "Take in charge ticket": 1,
+      "Wait": 1,
+      "Create SW anomaly": 0
+    },
+    "Value 1": {
+      "Assign seriousness": 2,
+      "Require upgrade": 2,
+      "Resolve ticket": 1,
+      "Take in charge ticket": 2,
+      "Wait": 0
+    },
+    "Value 12": {
+      "Assign seriousness": 1,
+      "Resolve ticket": 1,
+      "Take in charge ticket": 1,
+      "Wait": 1
+    },
+    "Value 4": {
+      "Assign seriousness": 1,
+      "Require upgrade": 1,
+      "Resolve ticket": 0,
+      "Take in charge ticket": 2,
+      "Wait": 0
+    },
+    "Value 15": {
+      "Assign seriousness": 1,
+      "Resolve ticket": 1,
+      "Take in charge ticket": 1,
+      "Wait": 0
+    },
+    "Value 9": {
+      "Assign seriousness": 1,
+      "Require upgrade": 0,
+      "Resolve ticket": 1,
+      "Take in charge ticket": 1,
+      "Wait": 1
+    },
+    "Value 13": {
+      "Assign seriousness": 1,
+      "Resolve ticket": 0,
+      "Take in charge ticket": 2,
+      "Wait": 0
+    },
+    "Value 2": {
+      "Assign seriousness": 0,
+      "Require upgrade": 0,
+      "Resolve ticket": 1,
+      "Take in charge ticket": 0,
+      "Wait": 1,
+      "Create SW anomaly": 1,
+      "Closed": 0
+    },
+    "Value 7": {
+      "Assign seriousness": 0,
+      "Resolve ticket": 2,
+      "Take in charge ticket": 2,
+      "Wait": 2
+    },
+    "Value 10": {
+      "Assign seriousness": 0,
+      "Resolve ticket": 0,
+      "Take in charge ticket": 0,
+      "Wait": 1
+    },
+    "Value 16": {
+      "Assign seriousness": 0,
+      "Resolve ticket": 2,
+      "Take in charge ticket": 1,
+      "Wait": 2
+    },
+    "Value 6": {
+      "Assign seriousness": 0,
+      "Resolve ticket": 2,
+      "Take in charge ticket": 2,
+      "Wait": 0
+    },
+    "Value 19": {
+      "Resolve ticket": 2,
+      "Take in charge ticket": 0,
+      "Wait": 2
+    },
+    "Value 17": {
+      "Resolve ticket": 1,
+      "Take in charge ticket": 2
+    },
+    "Value 21": {
+      "Resolve ticket": 0,
+      "Take in charge ticket": 0,
+      "Closed": 2
+    },
+    "Value 20": {
+      "Resolve ticket": 0,
+      "Take in charge ticket": 1,
+      "Wait": 0
+    },
+    "Value 18": {
+      "Resolve ticket": 0,
+      "Take in charge ticket": 0,
+      "Wait": 1
+    },
+    "Value 3": {
+      "Take in charge ticket": 0,
+      "Closed": 1
+    },
+    "Value 5": {
+      "Take in charge ticket": 0,
+      "Wait": 2,
+      "Closed": 0
+    }
+  },
+  "resource_processing_times": {
+    "Value 1": {
+      "Assign seriousness": 180.0,
+      "Require upgrade": 62963.0,
+      "Resolve ticket": 69464.5,
+      "Take in charge ticket": 25.0,
+      "Wait": 103406.0
+    },
+    "Value 10": {
+      "Assign seriousness": 220867.0,
+      "Resolve ticket": 97816.0,
+      "Take in charge ticket": 259129.0,
+      "Wait": 96430.0
+    },
+    "Value 11": {
+      "Assign seriousness": 43.0,
+      "Resolve ticket": 375.0,
+      "Take in charge ticket": 79139.0,
+      "Wait": 500.0
+    },
+    "Value 12": {
+      "Assign seriousness": 213.0,
+      "Resolve ticket": 16411.5,
+      "Take in charge ticket": 109910.0,
+      "Wait": 81067.0
+    },
+    "Value 13": {
+      "Assign seriousness": 5583.5,
+      "Resolve ticket": 151825.5,
+      "Take in charge ticket": 60841.5,
+      "Wait": 473104.5
+    },
+    "Value 14": {
+      "Assign seriousness": 72.0,
+      "Create SW anomaly": 97721.0,
+      "Resolve ticket": 89098.5,
+      "Take in charge ticket": 67698.0,
+      "Wait": 79871.5
+    },
+    "Value 15": {
+      "Assign seriousness": 562.0,
+      "Resolve ticket": 58933.0,
+      "Take in charge ticket": 63708.0,
+      "Wait": 180300.0
+    },
+    "Value 16": {
+      "Assign seriousness": 614469.0,
+      "Resolve ticket": 4057.0,
+      "Take in charge ticket": 167378.0,
+      "Wait": 8896.0
+    },
+    "Value 17": {
+      "Resolve ticket": 59073.0,
+      "Take in charge ticket": 2923.5
+    },
+    "Value 18": {
+      "Resolve ticket": 1426778.5,
+      "Take in charge ticket": 367929.0,
+      "Wait": 65041.0
+    },
+    "Value 19": {
+      "Resolve ticket": 139.5,
+      "Take in charge ticket": 394660.5,
+      "Wait": 333.5
+    },
+    "Value 2": {
+      "Assign seriousness": 70609.5,
+      "Closed": 5106992.0,
+      "Create SW anomaly": 19012.0,
+      "Require upgrade": 687644.0,
+      "Resolve ticket": 15287.0,
+      "Take in charge ticket": 175931.5,
+      "Wait": 87368.5
+    },
+    "Value 20": {
+      "Resolve ticket": 1213720.0,
+      "Take in charge ticket": 96899.0,
+      "Wait": 166000.0
+    },
+    "Value 21": {
+      "Closed": 34.5,
+      "Resolve ticket": 649873.5,
+      "Take in charge ticket": 2264901.0
+    },
+    "Value 3": {
+      "Closed": 1296016.0,
+      "Take in charge ticket": 234413.0
+    },
+    "Value 4": {
+      "Assign seriousness": 218.5,
+      "Require upgrade": 147237.0,
+      "Resolve ticket": 142000.0,
+      "Take in charge ticket": 9492.0,
+      "Wait": 165013.0
+    },
+    "Value 5": {
+      "Closed": 2779140.0,
+      "Take in charge ticket": 653925.5,
+      "Wait": 7.0
+    },
+    "Value 6": {
+      "Assign seriousness": 1010368.0,
+      "Resolve ticket": 5893.0,
+      "Take in charge ticket": 58741.0,
+      "Wait": 110897.0
+    },
+    "Value 7": {
+      "Assign seriousness": 99638.5,
+      "Resolve ticket": 28.5,
+      "Take in charge ticket": 24764.0,
+      "Wait": 48144.5
+    },
+    "Value 8": {
+      "Assign seriousness": 23.5,
+      "Resolve ticket": 226.0,
+      "Take in charge ticket": 39.5,
+      "Wait": 598.0
+    },
+    "Value 9": {
+      "Assign seriousness": 1258.0,
+      "Require upgrade": 451967.0,
+      "Resolve ticket": 60405.0,
+      "Take in charge ticket": 103523.0,
+      "Wait": 58627.0
+    }
+  },
+  "support_counts": {
+    "Value 1": {
+      "Assign seriousness": 16,
+      "Require upgrade": 8,
+      "Resolve ticket": 562,
+      "Take in charge ticket": 479,
+      "Wait": 123
+    },
+    "Value 10": {
+      "Assign seriousness": 6,
+      "Resolve ticket": 86,
+      "Take in charge ticket": 93,
+      "Wait": 9
+    },
+    "Value 11": {
+      "Assign seriousness": 14,
+      "Resolve ticket": 91,
+      "Take in charge ticket": 93,
+      "Wait": 15
+    },
+    "Value 12": {
+      "Assign seriousness": 9,
+      "Resolve ticket": 150,
+      "Take in charge ticket": 127,
+      "Wait": 49
+    },
+    "Value 13": {
+      "Assign seriousness": 16,
+      "Resolve ticket": 480,
+      "Take in charge ticket": 380,
+      "Wait": 84
+    },
+    "Value 14": {
+      "Assign seriousness": 17,
+      "Create SW anomaly": 3,
+      "Resolve ticket": 140,
+      "Take in charge ticket": 128,
+      "Wait": 46
+    },
+    "Value 15": {
+      "Assign seriousness": 23,
+      "Resolve ticket": 77,
+      "Take in charge ticket": 53,
+      "Wait": 3
+    },
+    "Value 16": {
+      "Assign seriousness": 9,
+      "Resolve ticket": 137,
+      "Take in charge ticket": 121,
+      "Wait": 35
+    },
+    "Value 17": {
+      "Resolve ticket": 56,
+      "Take in charge ticket": 26
+    },
+    "Value 18": {
+      "Resolve ticket": 12,
+      "Take in charge ticket": 14,
+      "Wait": 9
+    },
+    "Value 19": {
+      "Resolve ticket": 22,
+      "Take in charge ticket": 26,
+      "Wait": 4
+    },
+    "Value 2": {
+      "Assign seriousness": 170,
+      "Closed": 3,
+      "Create SW anomaly": 15,
+      "Require upgrade": 15,
+      "Resolve ticket": 1147,
+      "Take in charge ticket": 1284,
+      "Wait": 272
+    },
+    "Value 20": {
+      "Resolve ticket": 5,
+      "Take in charge ticket": 3,
+      "Wait": 5
+    },
+    "Value 21": {
+      "Closed": 8,
+      "Resolve ticket": 12,
+      "Take in charge ticket": 5
+    },
+    "Value 3": {
+      "Closed": 706,
+      "Take in charge ticket": 22
+    },
+    "Value 4": {
+      "Assign seriousness": 8,
+      "Require upgrade": 12,
+      "Resolve ticket": 353,
+      "Take in charge ticket": 263,
+      "Wait": 66
+    },
+    "Value 5": {
+      "Closed": 3449,
+      "Take in charge ticket": 4,
+      "Wait": 3
+    },
+    "Value 6": {
+      "Assign seriousness": 3,
+      "Resolve ticket": 226,
+      "Take in charge ticket": 283,
+      "Wait": 32
+    },
+    "Value 7": {
+      "Assign seriousness": 6,
+      "Resolve ticket": 68,
+      "Take in charge ticket": 67,
+      "Wait": 12
+    },
+    "Value 8": {
+      "Assign seriousness": 68,
+      "Resolve ticket": 107,
+      "Take in charge ticket": 346,
+      "Wait": 15
+    },
+    "Value 9": {
+      "Assign seriousness": 15,
+      "Require upgrade": 3,
+      "Resolve ticket": 601,
+      "Take in charge ticket": 515,
+      "Wait": 273
+    }
+  },
+  "excluded_pairs": [
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Wait",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 4",
+      "activity": "Wait",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 13",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 13",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 13",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 13",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 6",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 6",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 12",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 4",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 6",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 13",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 4",
+      "activity": "Wait",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Wait",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Assign seriousness",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Wait",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 13",
+      "activity": "Assign seriousness",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 13",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 12",
+      "activity": "Assign seriousness",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 4",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 16",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 4",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 13",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 12",
+      "activity": "Wait",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 16",
+      "activity": "Assign seriousness",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 13",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 12",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 2",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 12",
+      "activity": "Wait",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 6",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 16",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 9",
+      "activity": "Resolve ticket",
+      "reason": "zero_or_negative_sojourn"
+    },
+    {
+      "resource": "Value 1",
+      "activity": "Create SW anomaly",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "Value 10",
+      "activity": "Closed",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "Value 13",
+      "activity": "Require upgrade",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "Value 15",
+      "activity": "Create SW anomaly",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "Value 18",
+      "activity": "Assign seriousness",
+      "reason": "support_2_below_n_min_3"
+    },
+    {
+      "resource": "Value 19",
+      "activity": "Assign seriousness",
+      "reason": "support_1_below_n_min_3"
+    },
+    {
+      "resource": "Value 21",
+      "activity": "Assign seriousness",
+      "reason": "support_1_below_n_min_3"
+    }
+  ],
+  "activities_at_risk": [
+    "Insert ticket",
+    "Start"
+  ],
+  "config_used": {
+    "n_tiers": 3,
+    "n_min_support": 3,
+    "cap_percentile": 95.0,
+    "tiering_method": "quantile",
+    "processing_time_mode": "sojourn_approximation",
+    "activity_prefix_filter": null,
+    "log_path": "../Event Logs/helpdesk_anonymized.csv"
+  },
+  "summary": {
+    "n_resources": 21,
+    "n_activities": 7,
+    "n_eligible_pairs": 82,
+    "n_excluded_pairs": 91,
+    "n_activities_at_risk": 2
+  }
+}
