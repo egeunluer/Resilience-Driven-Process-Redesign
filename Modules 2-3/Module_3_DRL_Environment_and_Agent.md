@@ -121,38 +121,90 @@ after recovery curve and computation of the resilience metrics (TI, MPD, RT, CPL
 
 ## 5. Reward Functions
 
-Two candidate reward functions are implemented. Both are computed per decision step.
+Two candidate reward functions are implemented. Both operate on the process performance
+indicator (PPI) `φ(t)` — the running cycle time / average lead time of recently completed
+cases — under the modelling assumption that **lower PPI is better**. `φ(t | eⱼ)` denotes the PPI
+at time `t` under disruption `eⱼ`. Both use a consistent acceptable-performance level `P*`,
+defined as the **maximum PPI observed in the event log** (e.g. max cycle time / max average
+lead time) rather than a per-run pre-shock baseline, so the reference is consistent across
+simulations (Kraus et al., 2024).
 
-### Reward Function 1 — Recovery velocity + deviation cost
+### Reward Function 1 — Potential-based recovery shaping + normalized deviation penalty
 
-Let `P(t)` be the process performance indicator (e.g. rolling average lead time of recently
-completed cases) at step `t`, and `P*` the acceptable performance level calibrated from
-pre-shock baseline.
+Built on the time-dependent resilience ratio of Henry & Ramirez-Marquez (2012), adapted so that
+lower PPI is better and normalized against `P*`. A static anchor `φ_fix` stands in for the
+disrupted-minimum PPI (the worst-case value, not known a priori). `φ_fix` is calibrated **before
+training** — e.g. by running a set of random-policy rollouts under the shock regime and recording
+the worst observed PPI; since the trained agent should beat a random policy, this is a
+conservative anchor (see §8 for a more robust alternative).
+
+Both components are normalized by the same denominator `|P* − φ_fix|`:
 
 ```
-r(t) = [Φ(s_{t+1}) − Φ(s_t)] − c · max(0, P(t) − P*)
+# r1 — recovery-velocity (potential-based shaping term, Ng et al. 1999):
+r1(t) = [ φ(t-1 | eⱼ) − φ(t | eⱼ) ] / |P* − φ_fix|
+
+# r2 — deviation penalty (position term):
+r2(t) = min{ 0,  −( φ(t | eⱼ) − P* ) / |P* − φ_fix| }
+
+# final reward (convex combination):
+r(t)  = β · r1(t) + (1 − β) · r2(t),      β ∈ (0, 1)
 ```
 
-- `Φ(s)` is a potential function measuring proximity to acceptable performance. Closer to
-  `P*` → higher potential. This shaping term rewards step-by-step recovery velocity.
-- The second term penalises every step the process spends below acceptable performance,
-  proportional to the deviation magnitude.
-- Hyperparameter `c` controls the trade-off between recovery speed and deviation penalty.
+- `r1` rewards step-by-step progress up the recovery curve (a **velocity** signal). Being the
+  step change of a normalized potential, it is a potential-based shaping term and does not alter
+  the optimal policy (Ng et al., 1999).
+- `r2` penalizes every step spent worse than `P*`, proportional to the deviation (a **position**
+  signal). The `min{0, ·}` makes it one-sided; the absolute value in the denominator keeps the
+  sign correct.
+- `β` trades off recovery velocity against absolute degradation.
+- `r1` and `r2` share a denominator and both depend on `φ(t)` (correlated) but are complementary
+  (velocity vs. position), so summing them is expected to help rather than harm (Ng et al., 1999;
+  Brys et al., 2014).
+- **Exact-invariance note:** the strict Ng et al. (1999) identity is `γ·Φ(s') − Φ(s)`; with a PPO
+  discount `γ < 1` the exact shaping numerator is `[ φ(t-1) − γ·φ(t) ]`. The `γ` factor is dropped
+  above for readability and is negligible at `γ ≈ 0.99`, but can be restored if exact policy
+  invariance is required.
 
-### Reward Function 2 — Lead time optimization with CPL constraint
+### Reward Function 2 — Constrained-MDP average lead time with CPL as a shock-period SLA
+
+Minimizes average lead time while enforcing a Cumulative-Performance-Loss (CPL) budget as a
+constraint. Because the agent decides at discrete epochs while the process flows in continuous
+time, the environment is treated as a Semi-Markov Decision Process (SMDP), so continuous holding
+costs accumulate correctly across variable-length epochs (Bradtke & Duff, 1995; Puterman, 1994;
+Gosavi, 2015).
+
+Definitions:
+- `d(t) = max{0, φ(t | eⱼ) − P*}` — instantaneous deviation from `P*`.
+- `τ_k = t_k − t_{k-1}` — SMDP sojourn time between consecutive decision epochs (requires the
+  continuous decision-epoch time `t_k` exposed by Module 2 — see Module 2 §4).
+- `B_k = B_{k-1} + d(k) · τ_k`, `B_0 = 0` — accumulated budget utilization; equals the resilience
+  loss `∫ d(t) dt` (Bruneau et al., 2003).
+- `CPL_base` — total CPL of a non-adaptive baseline (e.g. FIFO) under the same shock.
+- `CPL_max = p · CPL_base`, `p ∈ (0, 1]` — the budget; e.g. `p = 0.5` starts penalizing once the
+  agent exceeds 50% of FIFO's CPL (Ray et al., 2019).
+- `u_k = B_k / CPL_max` — normalized budget utilization.
+- `v_k = max{0, u_k − 1}` — constraint-violation signal.
 
 ```
-r(t) = −lead_time_contribution(t) − λ · CPL_contribution(t)
+# reward: Meneghello et al. (2024) base term (gated by a completion flag)
+#         minus a Lagrangian violation penalty:
+r(k) = f1 · ( 1 / [ 1 + c(σ) / C ] )  −  f2 · λ_k · v_k
+
+# Lagrange multiplier, updated on a slower timescale (RCPO, Tessler et al. 2018):
+λ_{k+1} = max{ 0,  λ_k + η_λ · v_k },      η_λ ≪ η_θ
 ```
 
-- The base reward minimises average lead time per completed case.
-- `CPL_contribution(t)` is the incremental cumulative performance loss at step `t`.
-- `λ` is a Lagrange multiplier updated on a slower timescale than the policy:
-  `λ ← max(0, λ + η · (CPL_accumulated − α · CPL_FIFO))`
-  where `CPL_FIFO` is the CPL accumulated by the non-adaptive FIFO baseline under the same
-  shock, and `α ∈ (0, 1)` is a configurable tolerance fraction.
-- As `λ` grows, the agent is penalised more heavily for prolonged degradation beyond the
-  FIFO reference. `λ` adapts automatically over training to tighten or relax the constraint.
+- `c(σ)` — lead time of a completed trace `σ`; `C` — scaling constant (Meneghello et al. 2024
+  used 10000; must be tuned per process / time unit).
+- `f1` — 1 when a trace completes at this step (augments the Meneghello reward so it is not only
+  granted after actions); `f2` — 1 when the agent takes an action.
+- `λ_k` grows while the CPL budget is violated (`v_k > 0`) and relaxes otherwise, adapting the
+  constraint automatically; `η_λ` must be far smaller than the policy learning rate `η_θ` for
+  stable multi-timescale convergence (Tessler et al., 2018).
+- **Observation dependency:** if RF2 is used, the individual-layer observation (§3.1) must be
+  augmented with `u_k` so the agent can distinguish early vs. late shock periods and learn a
+  budget-aware policy.
 
 ---
 
@@ -207,11 +259,16 @@ included in this log. Module 4 operates entirely on the cluster-layer representa
 
 ## 8. Open Implementation Decisions
 
-- Exact shape of the potential function `Φ(s)` in Reward Function 1 — a linear or
-  exponential decay toward `P*` are both candidates; the choice should be validated
-  empirically.
-- Value of `α` in Reward Function 2 (the CPL tolerance fraction relative to FIFO) — default
-  candidate is 0.8, meaning the agent is penalised once its CPL exceeds 80% of FIFO's CPL.
+- Calibration of `φ_fix` in Reward Function 1 (the disrupted-minimum anchor). Default: the
+  worst PPI over a set of random-policy rollouts. A robust statistic (e.g. a high percentile of
+  the disrupted-window PPI) or the trough of a heuristic baseline (e.g. FIFO, consistent with
+  RF2's `CPL_base`) is preferable to the single worst value, which is outlier- and
+  sample-size-sensitive. Also fix `β ∈ (0, 1)`. Since `φ_fix` enters only through the constant
+  `|P* − φ_fix|`, its main effect is reward scaling — verify it keeps rewards O(1) and never near
+  zero.
+- Value of `p ∈ (0, 1]` in Reward Function 2 (the CPL budget as a fraction of FIFO's `CPL_base`)
+  — e.g. `p = 0.5` penalizes once the agent exceeds 50% of FIFO's CPL. Also tune the scaling
+  constant `C` (Meneghello et al. 2024 used 10000) and ensure `η_λ ≪ η_θ`.
 - Whether to use a single pending-activity-at-a-time decision model or allow the agent to
   act on a batch of pending activities per step — the single-activity model is simpler and
   recommended as the default.

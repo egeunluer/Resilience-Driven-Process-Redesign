@@ -1001,6 +1001,9 @@
     },
     "11339": {
       "W_Valideren aanvraag": 878.4939999999999
+    },
+    "__NO_RESOURCE__": {
+      "W_Wijzigen contractgegevens": 125.859
     }
   },
   "support_counts": {
@@ -1331,6 +1334,9 @@
     },
     "11339": {
       "W_Valideren aanvraag": 14
+    },
+    "__NO_RESOURCE__": {
+      "W_Wijzigen contractgegevens": 0
     }
   },
   "excluded_pairs": [
@@ -1533,6 +1539,10 @@
   "activities_at_risk": [
     "W_Wijzigen contractgegevens"
   ],
+  "P_star": 2765499.2,
+  "normalization_cycle_time": 10000.0,
+  "_normalization_cycle_time_note": "Meneghello et al. (2024) default value (C=10000); not yet re-tuned for this dataset's lead-time scale.",
+  "ppi_window_n": 20,
   "config_used": {
     "n_tiers": 3,
     "n_min_support": 3,
@@ -1540,12 +1550,14 @@
     "tiering_method": "quantile",
     "processing_time_mode": "true",
     "activity_prefix_filter": "W_",
+    "activity_merge_map": null,
+    "exclude_activities": null,
     "log_path": "../Event Logs/BPI_Challenge_2012.xes"
   },
   "summary": {
-    "n_resources": 53,
+    "n_resources": 54,
     "n_activities": 6,
-    "n_eligible_pairs": 222,
+    "n_eligible_pairs": 223,
     "n_excluded_pairs": 39,
     "n_activities_at_risk": 1
   }

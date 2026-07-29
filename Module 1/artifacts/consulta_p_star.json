@@ -1,0 +1,22 @@
+{
+  "percentile": 95.0,
+  "p_star_seconds": 6146113.999999998,
+  "p_star_hours": 1707.2538888888885,
+  "p_star_days": 71.13557870370369,
+  "distribution_seconds": {
+    "count": 954,
+    "min": 0.0,
+    "mean": 1286842.1624737945,
+    "median": 458428.5,
+    "p90": 3981591.9000000004,
+    "p95": 6146113.999999998,
+    "p99": 8587374.240000004,
+    "max": 11736915.0
+  },
+  "worst_case_id": "85902",
+  "config_used": {
+    "log_path": "../Modules 2-3/RIMS_DRL-main/example/ConsultaDataMining201618/ConsultaDataMining201618.xes",
+    "activity_prefix_filter": null,
+    "percentile": 95.0
+  }
+}

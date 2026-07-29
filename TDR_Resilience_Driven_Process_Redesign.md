@@ -27,9 +27,9 @@ The central deliverable is a **White-Box Resilience Engine**: a pipeline that ta
 
 **Main RQ:** What resource allocation strategies does a DRL agent learn to keep a business process resilient under exogenous shocks, and what faithful, human-readable process redesign do those strategies distil into?
 
-- **RQ1:** Does the agent's policy make the process measurably more resilient than baseline approaches?
-- **RQ2:** Does the distilled artefact faithfully reproduce what the agent does, without inventing behaviour the agent never exhibited?
-
+- **RQ1:** How are shock and resilience concepts defined in Business Process Management literature and how can they be integrated into process simulations?
+- **RQ2:** How can the DRL agent learn to increase resilience of business processes in shock states and how can the performance of the agent be evaluated?
+- **RQ3:** How can the decision-making of the trained DRL agent be transformed into an admissible business process model, and does the generated process model accurately reflect the agent’s decisions?
 ---
 
 ## 4. Methodology Overview

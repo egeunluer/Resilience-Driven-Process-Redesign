@@ -1535,6 +1535,10 @@
       "W_Call incomplete files": 19343.094,
       "W_Complete application": 1364.225,
       "W_Validate application": 816.501
+    },
+    "__NO_RESOURCE__": {
+      "W_Personal Loan collection": 193.858,
+      "W_Shortened completion": 193.858
     }
   },
   "support_counts": {
@@ -2099,6 +2103,10 @@
       "W_Call incomplete files": 38,
       "W_Complete application": 5,
       "W_Validate application": 95
+    },
+    "__NO_RESOURCE__": {
+      "W_Personal Loan collection": 0,
+      "W_Shortened completion": 0
     }
   },
   "excluded_pairs": [
@@ -4175,8 +4183,12 @@
   ],
   "activities_at_risk": [
     "W_Personal Loan collection",
-    "W_Shortened completion "
+    "W_Shortened completion"
   ],
+  "P_star": 3673816.2,
+  "normalization_cycle_time": 10000.0,
+  "_normalization_cycle_time_note": "Meneghello et al. (2024) default value (C=10000); not yet re-tuned for this dataset's lead-time scale.",
+  "ppi_window_n": 20,
   "config_used": {
     "n_tiers": 3,
     "n_min_support": 3,
@@ -4184,12 +4196,14 @@
     "tiering_method": "quantile",
     "processing_time_mode": "true",
     "activity_prefix_filter": "W_",
+    "activity_merge_map": null,
+    "exclude_activities": null,
     "log_path": "../Event Logs/BPI Challenge 2017.xes"
   },
   "summary": {
-    "n_resources": 137,
+    "n_resources": 138,
     "n_activities": 6,
-    "n_eligible_pairs": 288,
+    "n_eligible_pairs": 290,
     "n_excluded_pairs": 414,
     "n_activities_at_risk": 2
   }

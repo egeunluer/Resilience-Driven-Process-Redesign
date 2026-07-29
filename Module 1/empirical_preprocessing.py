@@ -34,22 +34,39 @@ log = logging.getLogger(__name__)
 
 TIER_LABELS = {0: "slow", 1: "mid", 2: "fast", 3: "tier_3", 4: "tier_4"}
 
+# Synthetic resource injected for activities left with zero eligible resources
+# (cross-cutting gap #1). Always available, excluded from resource_tier_map so
+# it never enters the cluster-layer observation — a deadlock-avoidance
+# placeholder, not a resource meant to be genuinely selected between.
+PLACEHOLDER_RESOURCE = "__NO_RESOURCE__"
+
 
 # ---------------------------------------------------------------------------
 # Step 1: Load and normalise the log
 # ---------------------------------------------------------------------------
 
-def load_and_prepare(log_path: str, activity_prefix: str | None) -> tuple[pd.DataFrame, bool]:
+_START_TS_CSV_ALIASES = ["start timestamp", "start:timestamp", "start time", "start_timestamp"]
+
+
+def load_and_prepare(
+    log_path: str,
+    activity_prefix: str | None,
+    activity_merge_map: dict[str, str] | None = None,
+) -> tuple[pd.DataFrame, bool, bool]:
     """
-    Load XES or CSV, normalise column names, optionally filter by activity prefix.
+    Load XES or CSV, normalise column names, optionally merge activities and
+    filter by activity prefix.
 
     For CSV, column names are detected automatically using common aliases.
     Required columns after normalisation: case_id, activity, resource, timestamp.
 
-    Returns (df, has_true_pt) where:
-      - df has columns: case_id, activity, resource, timestamp, lifecycle
-      - has_true_pt = True when both 'start' and 'complete' lifecycle values exist
-        (enables direct start→complete processing-time computation)
+    Returns (df, has_true_pt_long, has_true_pt_wide) where:
+      - df has columns: case_id, activity, resource, timestamp, lifecycle, and
+        (when available) start_timestamp
+      - has_true_pt_long = True when both 'start' and 'complete' lifecycle rows exist
+        for the same (case, activity, resource) (long/two-row format)
+      - has_true_pt_wide = True when a same-row start timestamp exists alongside the
+        completion timestamp (wide/single-row format, e.g. ConsultaDataMining201618)
     """
     path = Path(log_path)
     log.info(f"Reading {path.name} …")
@@ -61,13 +78,33 @@ def load_and_prepare(log_path: str, activity_prefix: str | None) -> tuple[pd.Dat
             "concept:name": "activity",
             "org:resource": "resource",
             "time:timestamp": "timestamp",
+            "start:timestamp": "start_timestamp",
         }
         df = df.rename(columns=rename)
     elif path.suffix.lower() == ".csv":
         df = pd.read_csv(str(path))
         df = _normalise_csv_columns(df)
+        start_ts_col = next(
+            (c for c in df.columns if c.lower().strip() in _START_TS_CSV_ALIASES and c != "timestamp"),
+            None,
+        )
+        if start_ts_col:
+            df = df.rename(columns={start_ts_col: "start_timestamp"})
     else:
         raise ValueError(f"Unsupported format: {path.suffix}. Supported: .xes, .csv")
+
+    # Strip stray leading/trailing whitespace from activity names. Some logs (e.g.
+    # BPI2017's "W_Shortened completion ") carry a trailing space in concept:name
+    # that the corresponding mined Petri net's task names do not — left unstripped,
+    # this artifact's keys silently never match what the simulator asks about,
+    # making that activity permanently unassignable (looks identical to a genuine
+    # zero-eligible-resource activity, but isn't one).
+    df["activity"] = df["activity"].str.strip()
+
+    # Merge activities (e.g. collapsing a fake-resource duplicate pair into one name)
+    # before any lifecycle/prefix logic, so downstream detection sees the merged name.
+    if activity_merge_map:
+        df["activity"] = df["activity"].replace(activity_merge_map)
 
     # Detect lifecycle column (handles 'lifecycle:transition' and variants)
     lifecycle_col = next(
@@ -83,12 +120,22 @@ def load_and_prepare(log_path: str, activity_prefix: str | None) -> tuple[pd.Dat
         if "start" in set(lc_lower) and "complete" in set(lc_lower):
             start_acts = set(df[lc_lower == "start"]["activity"].dropna().unique())
             complete_acts = set(df[lc_lower == "complete"]["activity"].dropna().unique())
-            has_true_pt = len(start_acts & complete_acts) > 0
+            has_true_pt_long = len(start_acts & complete_acts) > 0
         else:
-            has_true_pt = False
+            has_true_pt_long = False
     else:
         df["lifecycle"] = "complete"
-        has_true_pt = False
+        has_true_pt_long = False
+
+    # Wide format: a start timestamp on the same row as the completion timestamp
+    # (lifecycle uniformly 'complete', e.g. ConsultaDataMining201618's start:timestamp).
+    has_start_ts_col = "start_timestamp" in df.columns
+    if has_start_ts_col:
+        if pd.api.types.is_object_dtype(df["start_timestamp"]):
+            df["start_timestamp"] = pd.to_datetime(df["start_timestamp"], utc=False, errors="coerce")
+        if hasattr(df["start_timestamp"].dtype, "tz") and df["start_timestamp"].dt.tz is not None:
+            df["start_timestamp"] = df["start_timestamp"].dt.tz_localize(None)
+    has_true_pt_wide = has_start_ts_col and df["start_timestamp"].notna().any()
 
     # Filter to chosen activity prefix
     if activity_prefix:
@@ -105,16 +152,20 @@ def load_and_prepare(log_path: str, activity_prefix: str | None) -> tuple[pd.Dat
     if hasattr(df["timestamp"].dtype, "tz") and df["timestamp"].dt.tz is not None:
         df["timestamp"] = df["timestamp"].dt.tz_localize(None)
 
-    df = df[["case_id", "activity", "resource", "timestamp", "lifecycle"]].copy()
+    keep_cols = ["case_id", "activity", "resource", "timestamp", "lifecycle"]
+    if has_start_ts_col:
+        keep_cols.append("start_timestamp")
+    df = df[keep_cols].copy()
     df = df.sort_values(["case_id", "timestamp"]).reset_index(drop=True)
 
+    mode = "true_pt" if has_true_pt_long else ("true_pt_wide" if has_true_pt_wide else "sojourn_approx")
     log.info(
         f"Prepared: {len(df)} events | "
         f"{df['activity'].nunique()} activities | "
         f"{df['resource'].nunique()} resources | "
-        f"mode={'true_pt' if has_true_pt else 'sojourn_approx'}"
+        f"mode={mode}"
     )
-    return df, has_true_pt
+    return df, has_true_pt_long, has_true_pt_wide
 
 
 # Common CSV column name aliases → canonical name
@@ -205,6 +256,32 @@ def _compute_true_pt(df: pd.DataFrame) -> tuple[pd.DataFrame, list]:
         })
 
     records = merged[merged["pt"] > 0][["resource", "activity", "pt"]]
+    return records, excluded
+
+
+# ---------------------------------------------------------------------------
+# Step 2a-wide: True processing times (same-row start_timestamp → timestamp)
+# ---------------------------------------------------------------------------
+
+def _compute_true_pt_wide(df: pd.DataFrame) -> tuple[pd.DataFrame, list]:
+    """
+    Wide-format true processing time: start_timestamp and timestamp (completion)
+    live on the same row (e.g. ConsultaDataMining201618's start:timestamp), so no
+    start/complete pairing across rows is needed — just a per-row subtraction.
+    """
+    rows = df.dropna(subset=["start_timestamp"]).copy()
+    rows["pt"] = (rows["timestamp"] - rows["start_timestamp"]).dt.total_seconds()
+
+    excluded = []
+    bad = rows[rows["pt"] <= 0]
+    for _, row in bad.iterrows():
+        excluded.append({
+            "resource": row["resource"],
+            "activity": row["activity"],
+            "reason": "zero_or_negative_true_pt_wide",
+        })
+
+    records = rows[rows["pt"] > 0][["resource", "activity", "pt"]]
     return records, excluded
 
 
@@ -441,15 +518,30 @@ def run(
     n_tiers: int = 3,
     n_min: int = 3,
     cap_pct: float = 95.0,
+    activity_merge_map: dict[str, str] | None = None,
+    exclude_activities: list[str] | None = None,
+    p_star: float | None = None,
+    normalization_cycle_time: float = 10000.0,
+    ppi_window_n: int = 20,
 ) -> dict:
-    df, has_true_pt = load_and_prepare(log_path, activity_prefix)
+    df, has_true_pt_long, has_true_pt_wide = load_and_prepare(
+        log_path, activity_prefix, activity_merge_map
+    )
     all_activities = set(df["activity"].unique())
-    mode = "true" if has_true_pt else "sojourn_approximation"
 
-    log.info(f"Computing processing times (mode={mode}) …")
-    if has_true_pt:
+    log.info(
+        f"Computing processing times (mode="
+        f"{'true' if has_true_pt_long else ('true_wide' if has_true_pt_wide else 'sojourn_approximation')}) …"
+    )
+    # Precedence: long-format true PT > wide-format true PT > sojourn approximation.
+    if has_true_pt_long:
+        mode = "true"
         records, excluded_stage1 = _compute_true_pt(df)
+    elif has_true_pt_wide:
+        mode = "true_wide"
+        records, excluded_stage1 = _compute_true_pt_wide(df)
     else:
+        mode = "sojourn_approximation"
         records, excluded_stage1 = _compute_sojourn_pt(df)
     log.info(f"  Raw (resource, activity, pt) records: {len(records)}")
 
@@ -463,10 +555,36 @@ def run(
         for exc in excluded_stage2:
             log.warning(f"    {exc}")
 
+    # Explicit activity exclusion (e.g. Consulta's fake-resource merged activity):
+    # strip from resource_pt/support_counts BEFORE tiering, so it never enters
+    # resource_tier_map and lands cleanly in activities_at_risk below.
+    if exclude_activities:
+        for resource in list(resource_pt.keys()):
+            for act in exclude_activities:
+                resource_pt[resource].pop(act, None)
+                support_counts.get(resource, {}).pop(act, None)
+            if not resource_pt[resource]:
+                del resource_pt[resource]
+        log.info(f"Excluded activities from resource eligibility: {exclude_activities}")
+
     log.info(f"Computing tiers (n_tiers={n_tiers}) …")
     resource_tier_map, activity_tiers = compute_tiers(resource_pt, n_tiers)
 
     at_risk = validate(resource_pt, activity_tiers, all_activities)
+
+    # Synthetic placeholder resource for zero-eligible-resource activities
+    # (cross-cutting gap #1). Added AFTER compute_tiers/validate, so it is
+    # never part of resource_tier_map — only resource_processing_times.
+    if at_risk:
+        all_pts = [pt for acts in resource_pt.values() for pt in acts.values()]
+        placeholder_pt = float(np.median(all_pts)) if all_pts else 3600.0
+        for activity in at_risk:
+            resource_pt.setdefault(PLACEHOLDER_RESOURCE, {})[activity] = placeholder_pt
+            support_counts.setdefault(PLACEHOLDER_RESOURCE, {})[activity] = 0
+        log.info(
+            f"Added synthetic placeholder resource '{PLACEHOLDER_RESOURCE}' for "
+            f"{len(at_risk)} at-risk activities (pt={placeholder_pt:.0f}s, dataset median)"
+        )
 
     artifact = {
         "activity_tiers": activity_tiers,
@@ -475,6 +593,13 @@ def run(
         "support_counts": support_counts,
         "excluded_pairs": excluded_stage1 + excluded_stage2,
         "activities_at_risk": at_risk,
+        "P_star": p_star,
+        "normalization_cycle_time": normalization_cycle_time,
+        "_normalization_cycle_time_note": (
+            "Meneghello et al. (2024) default value (C=10000); not yet re-tuned "
+            "for this dataset's lead-time scale."
+        ),
+        "ppi_window_n": ppi_window_n,
         "config_used": {
             "n_tiers": n_tiers,
             "n_min_support": n_min,
@@ -482,6 +607,8 @@ def run(
             "tiering_method": "quantile",
             "processing_time_mode": mode,
             "activity_prefix_filter": activity_prefix,
+            "activity_merge_map": activity_merge_map,
+            "exclude_activities": exclude_activities,
             "log_path": str(log_path),
         },
         "summary": {
@@ -532,7 +659,43 @@ if __name__ == "__main__":
         default=95.0,
         help="Percentile for outlier capping before median computation",
     )
+    parser.add_argument(
+        "--merge-activities",
+        nargs="+",
+        default=None,
+        metavar="OLD=NEW",
+        help="Rename/merge activities, e.g. --merge-activities 'A=Submit Request' 'B=Submit Request'",
+    )
+    parser.add_argument(
+        "--exclude-activities",
+        nargs="+",
+        default=None,
+        help="Activity names to strip from resource eligibility (they become at-risk "
+             "and get the synthetic placeholder resource instead)",
+    )
+    parser.add_argument(
+        "--p-star",
+        type=float,
+        default=None,
+        help="Acceptable-performance threshold P* (seconds), e.g. from compute_p_star.py",
+    )
+    parser.add_argument(
+        "--normalization-cycle-time",
+        type=float,
+        default=10000.0,
+        help="C constant for the inverse-cycle-time reward term (Meneghello et al. 2024 default)",
+    )
+    parser.add_argument(
+        "--ppi-window-n",
+        type=int,
+        default=20,
+        help="Rolling window size (in completed traces) for the runtime PPI phi(t)",
+    )
     args = parser.parse_args()
+
+    activity_merge_map = None
+    if args.merge_activities:
+        activity_merge_map = dict(pair.split("=", 1) for pair in args.merge_activities)
 
     try:
         run(
@@ -542,6 +705,11 @@ if __name__ == "__main__":
             n_tiers=args.n_tiers,
             n_min=args.n_min,
             cap_pct=args.cap_pct,
+            activity_merge_map=activity_merge_map,
+            exclude_activities=args.exclude_activities,
+            p_star=args.p_star,
+            normalization_cycle_time=args.normalization_cycle_time,
+            ppi_window_n=args.ppi_window_n,
         )
     except Exception as e:
         log.error(str(e))

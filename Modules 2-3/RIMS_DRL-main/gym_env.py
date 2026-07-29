@@ -8,6 +8,7 @@ import utility
 from process import SimulationProcess
 from event_trace import Token
 from parameters import Parameters
+from role_simulator import RoleSimulator
 import sys, getopt
 from utility import *
 import pm4py
@@ -18,8 +19,15 @@ import math
 import pm4py
 from os.path import exists
 from datetime import datetime, timedelta
+from collections import deque
 import random
 CYCLE_TIME_MAX = 8.64e+6
+
+# Synthetic resource for zero-eligible-resource activities (Module 1 activities_at_risk).
+# Always available (infinite capacity), never entered into resource_tier_map — a
+# deadlock-avoidance placeholder, not a resource meant to be genuinely selected between.
+PLACEHOLDER_RESOURCE = '__NO_RESOURCE__'
+_ALWAYS_ON_CALENDAR = {'days': [0, 1, 2, 3, 4, 5, 6], 'hour_min': 0, 'hour_max': 24}
 
 
 DEBUG_PRINT = False
@@ -28,7 +36,7 @@ if __name__ == "__main__":
 
 
 class gym_env(Env):
-    def __init__(self, NAME_LOG, N_TRACES, CALENDAR, POLICY=None, N_SIMULATION=0, threshold=0, postpone=True, reward_function='inverse_CT', artifact_path=None, shock_config=None, cpl_budget=0.0, eta_lambda=0.01) -> None:
+    def __init__(self, NAME_LOG, N_TRACES, CALENDAR, POLICY=None, N_SIMULATION=0, threshold=0, postpone=True, reward_function='inverse_CT', artifact_path=None, shock_config=None, cpl_budget=0.0, eta_lambda=0.01, phi_fix=None, beta=0.5) -> None:
         self.name_log = NAME_LOG
 
         self.CALENDAR = CALENDAR ## "True" If you want to use calendar, "False" otherwise
@@ -61,12 +69,21 @@ class gym_env(Env):
             artifact = json.load(f)
         self.resource_processing_times = artifact['resource_processing_times']
         self.resource_tier_map = artifact['resource_tier_map']
+        self.activities_at_risk = artifact.get('activities_at_risk', [])
+        # D1/D9: P*, per-dataset normalization constant (C), and the PPI rolling
+        # window size, all sourced from the Module 1 artifact (Phase 9).
+        self.P_star = artifact.get('P_star')
+        self.normalization_cycle_time = artifact.get('normalization_cycle_time', self.normalization_cycle_time)
+        self.ppi_window_n = artifact.get('ppi_window_n', 20)
 
         self.shock_config = shock_config  # D5: ShockConfig instance or None
         # D6 (RF2): constrained-MDP parameters.
-        self.cpl_budget = cpl_budget       # target max cumulative process lag per episode
+        self.cpl_budget = cpl_budget       # CPL_max = p * CPL_base (p applied by the caller)
         self.eta_lambda = eta_lambda       # Lagrange multiplier step size
-        self.lagrange_lambda = 0.0         # u_k — persists across episodes, updated at episode end
+        self.lagrange_lambda = 0.0         # lambda_k — persists across episodes, updated at episode end
+        # D9 (RF1): potential-based shaping parameters.
+        self.phi_fix = phi_fix             # worst PPI from random-policy calibration rollouts
+        self.beta = beta                   # r1/r2 convex-combination weight, beta in (0,1)
 
         self.n_simulation = N_SIMULATION
 
@@ -76,6 +93,11 @@ class gym_env(Env):
             self.N_TRACES = N_TRACES
 
         self.resources = sorted(list(input_data["resource"].keys()))
+        # Synthetic placeholder resource wiring (Module 1 activities_at_risk, Phase 10):
+        # add it to the resource list (observation/action space) once at construction
+        # time; the corresponding SimPy RoleSimulator is (re-)registered every reset().
+        if self.activities_at_risk and PLACEHOLDER_RESOURCE not in self.resources:
+            self.resources = sorted(self.resources + [PLACEHOLDER_RESOURCE])
         self.task_types = sorted(list(input_data["processing_time"].keys()))
 
         # Define the input and output of the agent (neural network)
@@ -153,6 +175,13 @@ class gym_env(Env):
                     counts[key] += 1
         return counts
 
+    def _current_ppi(self):
+        """D9: phi(t) — rolling mean cycle time of the last `ppi_window_n` completed
+        traces. Returns 0.0 before any trace has completed this episode."""
+        if len(self.ppi_history) == 0:
+            return 0.0
+        return float(np.mean(self.ppi_history))
+
     def retrieve_possible_assignments(self):
         # Build eligible (resource, activity) pairs from the Module 1 artifact.
         # A pair is eligible iff it survived the empirical processing-time computation
@@ -175,10 +204,22 @@ class gym_env(Env):
         # D6: CPL tracking — reset each episode; lagrange_lambda persists.
         self.cpl_accumulated = 0.0
         self.prev_env_time = 0.0
+        self.u_k = 0.0
+        self.v_k = 0.0
+        # D9: rolling PPI phi(t) tracking — reset each episode (fresh case population).
+        self.ppi_history = deque(maxlen=self.ppi_window_n)
+        self.prev_ppi = 0.0
         self.env = simpy.Environment()
         self.simulation_process = SimulationProcess(self.env, self.params, self.CALENDAR)
         # Populate the duration lookup so event_trace.py can access it (D1).
         self.simulation_process.resource_processing_times = self.resource_processing_times
+        # Register the always-available placeholder resource for activities_at_risk
+        # (Phase 10) — SimulationProcess is rebuilt fresh every reset(), so this must
+        # be re-registered every episode.
+        if self.activities_at_risk:
+            self.simulation_process._resources[PLACEHOLDER_RESOURCE] = RoleSimulator(
+                self.env, PLACEHOLDER_RESOURCE, math.inf, _ALWAYS_ON_CALENDAR
+            )
         # D5: register the shock SimPy process for this episode if shocks are configured.
         if self.shock_config is not None:
             self.simulation_process.shock_config = self.shock_config
@@ -279,22 +320,47 @@ class gym_env(Env):
         for trace_id, cycle_time in self.simulation_process.traces['ended']:
             if trace_id not in self.completed_traces:
                 self.completed_traces.append(trace_id)
+                # D9: feed the rolling PPI phi(t) — shared by RF1 and RF2 — regardless
+                # of which reward function is active (cheap, and keeps it available).
+                self.ppi_history.append(cycle_time)
                 if self.reward_function == 'negative_CT':
                     reward -= cycle_time/self.normalization_cycle_time
                 elif self.reward_function in ('inverse_CT', 'RF2'):
                     reward += 1 / (1 + (cycle_time/self.normalization_cycle_time))
+                elif self.reward_function == 'RF1':
+                    # D9 (RF1): potential-based recovery shaping + normalized deviation penalty.
+                    if self.phi_fix is None or self.P_star is None:
+                        raise ValueError(
+                            "RF1 requires both P_star (from the Module 1 artifact) and "
+                            "phi_fix (from random-policy calibration) to be set."
+                        )
+                    denom = abs(self.P_star - self.phi_fix) or 1e-6
+                    phi_t = self._current_ppi()
+                    r1 = (self.prev_ppi - phi_t) / denom          # velocity (shaping)
+                    r2 = min(0.0, -(phi_t - self.P_star) / denom)  # position (deviation)
+                    reward += self.beta * r1 + (1 - self.beta) * r2
+                    self.prev_ppi = phi_t
                 self.reward_count += 1
 
-        # D6 (RF2): accumulate CPL and apply Lagrange penalty per step.
+        # D6/D9 (RF2): SMDP CPL budget accumulation (B_k) + constrained-MDP violation
+        # penalty (v_k). d(t) = max(0, phi(t) - P*) is already ~0 whenever performance
+        # is at/below P*, so this naturally keeps accruing through the post-shock
+        # recovery tail without needing an explicit shock-active gate.
         if self.reward_function == 'RF2':
+            if self.P_star is None:
+                raise ValueError("RF2 requires P_star (from the Module 1 artifact) to be set.")
             current_time = float(self.env.now)
             dt = current_time - self.prev_env_time
-            if dt > 0 and self.simulation_process.shock_state.is_active:
-                n_pending = len(self.simulation_process.tokens_pending)
-                cpl_delta = dt * n_pending / self.normalization_cycle_time
-                self.cpl_accumulated += cpl_delta
-                reward -= self.lagrange_lambda * cpl_delta
+            if dt > 0:
+                phi_t = self._current_ppi()
+                d_t = max(0.0, phi_t - self.P_star)
+                self.cpl_accumulated += d_t * dt          # B_k
             self.prev_env_time = current_time
+            self.u_k = self.cpl_accumulated / self.cpl_budget if self.cpl_budget > 0 else 0.0
+            self.v_k = max(0.0, self.u_k - 1.0)
+            # f2 = 1 unconditionally: there is no postpone/no-op action, so every
+            # decision step is "the agent taking an action".
+            reward -= self.lagrange_lambda * self.v_k
 
         self.total_reward += reward
 
@@ -306,9 +372,16 @@ class gym_env(Env):
                 self.total_reward_end = sum([1 / (1 + (cycle_time/self.normalization_cycle_time)) for (trace_id, cycle_time) in self.simulation_process.traces['ended']])
             elif self.reward_function == 'negative_CT':
                 self.total_reward_end = sum([(-cycle_time/self.normalization_cycle_time) for (trace_id, cycle_time) in self.simulation_process.traces['ended']])
-            # D6 (RF2): update Lagrange multiplier at episode end.
+            elif self.reward_function == 'RF1':
+                # RF1's reward isn't a pure post-hoc function of final cycle_times (it
+                # depends on the phi(t) history built up incrementally), so there's no
+                # equivalent independent "final calc" cross-check to recompute here —
+                # just mirror the already-accumulated total.
+                self.total_reward_end = self.total_reward
+            # D6/D9 (RF2): update Lagrange multiplier at episode end, driven by the
+            # violation signal v_k (spec), not the raw cpl_accumulated-cpl_budget diff.
             if self.reward_function == 'RF2':
-                self.lagrange_lambda = max(0.0, self.lagrange_lambda + self.eta_lambda * (self.cpl_accumulated - self.cpl_budget))
+                self.lagrange_lambda = max(0.0, self.lagrange_lambda + self.eta_lambda * self.v_k)
             print('Mean cycle time:', self.mean_cycle_time, flush=True)
             print('Total reward sum final calc (normalized):', self.total_reward_end, flush=True)
             print('Total reward cumulative:', self.total_reward, flush=True)
@@ -423,8 +496,10 @@ class gym_env(Env):
         #wip = [(len(env_state['traces']['ongoing'])+1)/1000]
         # D5/D7: shock signal (1.0 = shock active, 0.0 = normal).
         shock_active = [float(self.simulation_process.shock_state.is_active)]
-        # D6/D7: Lagrange multiplier u_k (clamped to [0, 1] for observation stability).
-        u_k = [min(1.0, self.lagrange_lambda)]
+        # D6/D9: budget-utilization ratio u_k = B_k / CPL_max (NOT lambda_k — this was
+        # previously mislabeled as lambda_k here). Clamped to [0, 1] to match the
+        # declared observation_space Box bounds (violation still visible via v_k/reward).
+        u_k = [min(1.0, getattr(self, 'u_k', 0.0))]
         if self.CALENDAR:
             time = [env_state['time'].weekday()/6, (env_state['time'].hour*3600 + env_state['time'].minute*60 + env_state['time'].second)/(24*3600)]
             return np.array(resource_available + resource_assigned_to + task_types_num + time + shock_active + u_k)

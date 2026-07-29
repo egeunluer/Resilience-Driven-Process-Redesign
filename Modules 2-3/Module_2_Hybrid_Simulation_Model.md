@@ -41,9 +41,6 @@ rather than inventing new behavior.
     **only** to (a) determine eligibility — a resource with no entry for an activity has never
     performed it and is ineligible — and (b) optionally scope resource-removal shocks
     (Section 3). It is **not** used for timing or for the agent's action space.
-  - **Support counts** per `(resource, activity)` pair — the number of historical observations
-    behind each median (see Section 2.3). If Module 1 does not already emit these, it must be
-    extended to do so, or Module 2 must recompute them from the log.
 - **Implementation requirement before writing extension code:** locate/clone the RIMS reference
   implementation (or reimplement its public interface if no usable codebase exists) and identify
   its extension points for: (a) resource pool definition, (b) the per-decision-epoch simulation
@@ -64,16 +61,14 @@ changes the duration in exactly the way the historical data supports.
   ResourcePool[resource_id] = {
       "capacity": 1,                              # one worker, one task at a time
       "eligible_activities": <activities this resource has an entry for
-                              in resource_processing_times, after the
-                              min-support filter in 2.3>,
+                              in resource_processing_times>,
       "available": True                           # runtime busy/free flag
   }
   ```
 - `capacity = 1` per individual resource is the natural analogue of RIMS's per-worker busy/free
   tracking. A resource is decremented to busy on assignment and restored on completion.
 - Total pool size must equal the number of distinct resources in the log, minus those dropped by
-  Module 1 (zero/negative durations) and by the min-support filter (2.3). No resource is silently
-  lost; every exclusion is logged.
+  Module 1 (zero/negative durations). No resource is silently lost; every exclusion is logged.
 
 ### 2.2 Processing-time source (replaces RIMS's ML duration model)
 - When the simulator needs the duration of `activity` performed by the assigned `resource_id`,
@@ -102,21 +97,7 @@ changes the duration in exactly the way the historical data supports.
   instead of using the point median. Either choice remains load-independent. Default:
   deterministic median unless the sampled variant is explicitly enabled.
 
-### 2.3 Minimum-support filter (required)
-- **Problem addressed:** under shock, the agent is forced to reroute work to resources that
-  rarely perform the activity in normal operation. A median computed from only two or three
-  historical observations is essentially noise, and the agent could learn to exploit such
-  unreliable point estimates precisely in the crisis states the thesis cares about.
-- **Rule:** exclude any `(resource, activity)` pair whose historical support count is below a
-  configurable threshold `min_support` (`N_min`). Excluded pairs are treated exactly like
-  never-performed pairs: the resource is **ineligible** for that activity (removed from
-  `eligible_activities`, never returned by `get_feasible_resources`, never assignable).
-- This mirrors Module 1's existing exclusion of zero/negative durations — same mechanism, applied
-  on sample count rather than value.
-- `N_min` is a hyperparameter exposed in config (a small integer, e.g. 3–5; final value is an
-  open tuning decision). Every exclusion is logged as a data-coverage note.
-
-### 2.4 Assignment at simulation time
+### 2.3 Assignment at simulation time
 - Whenever stock RIMS would assign an individual worker to a task, this module instead:
   1. Reads the action handed down by Module 3 (the chosen `resource_id` for the pending activity).
   2. Verifies eligibility and availability (this is guaranteed upstream by action masking, but
@@ -124,7 +105,7 @@ changes the duration in exactly the way the historical data supports.
   3. Marks `resource_id` busy for the looked-up `duration` (2.2), then restores it on completion.
 - **Action-masking dependency:** the simulator must expose, at each decision point, the set of
   resources that are eligible for the pending activity (have a surviving
-  `resource_processing_times` entry after the min-support filter) **and** currently available.
+  `resource_processing_times` entry) **and** currently available.
   This feasibility signal is required by Module 3's action masking and must be a queryable
   method — see Section 4 (`get_feasible_resources`).
 
@@ -214,7 +195,7 @@ At every timestep, the shock mechanism exposes (for Module 3's observation space
 class ShockInjectedRIMSSimulator:
     def reset(self, mode: Literal["train", "eval"], eval_shock_config: dict | None = None):
         """Re-initialize simulation state, the individual-resource pool (from Module 1's
-        resource_processing_times, after the min-support filter), and the shock generator in
+        resource_processing_times), and the shock generator in
         the given mode."""
 
     def step(self, resource_assignment: dict[str, str]):
@@ -223,7 +204,7 @@ class ShockInjectedRIMSSimulator:
 
     def get_feasible_resources(self, activity: str) -> list[str]:
         """Return resource_ids that are (a) eligible for `activity` — i.e. have a
-        resource_processing_times entry surviving the min-support filter — AND (b) currently
+        resource_processing_times entry — AND (b) currently
         available. Used by Module 3 action masking."""
 
     def get_shock_state(self) -> dict:
@@ -243,21 +224,15 @@ performance tier (for the cluster-layer behavioral log) is done by Module 3 usin
 ## 5. Validation / Sanity Checks
 
 - **Pool completeness:** the individual-resource pool count equals the number of distinct
-  resources in the log, minus Module 1 exclusions (zero/negative durations) and minus
-  min-support exclusions. Every dropped resource/pair is logged.
-- **Eligibility integrity:** `get_feasible_resources` never returns a resource that is busy, that
-  lacks an entry for the activity, or whose `(resource, activity)` support is below `min_support`.
+  resources in the log, minus Module 1 exclusions (zero/negative durations). Every dropped
+  resource/pair is logged.
+- **Eligibility integrity:** `get_feasible_resources` never returns a resource that is busy or
+  that lacks an entry for the activity.
 - **Eval-mode control:** under `mode="eval"`, exactly one shock fires per run and no overlap
   occurs across repeated `reset()` calls with different seeds.
 - **Train-mode variety:** under `mode="train"`, over many episodes, observed shock-type
   frequencies, magnitude distribution, and overlap rate roughly match the configured sampling
   ranges (statistical smoke test, not strict equality).
-- **Coverage report (new, ties to the min-support filter):** emit the distribution of support
-  counts per `(resource, activity)` pair, broken out by performance tier. This quantifies how
-  well the log covers the off-normal assignments the agent will reach for under shock. Healthy
-  support across mid/slow tiers means the shock-regime durations rest on real data; thin support
-  in those tiers is the residual limitation to report. This check is cheap and uses artifacts
-  already produced by Module 1.
 
 ---
 
@@ -266,7 +241,6 @@ performance tier (for the cluster-layer behavioral log) is done by Module 3 usin
 - Numeric Poisson shock rate `λ` — not given; set/tune per event log.
 - Shock duration — fixed vs. sampled range; not numerically specified.
 - Range of `fraction_m` magnitudes for training — not numerically specified.
-- `min_support` (`N_min`) threshold for the coverage filter — small integer, e.g. 3–5; tune.
 - Deterministic median vs. sampling from the empirical duration array (2.2) — depends on whether
   Module 1 retains per-pair samples; default deterministic.
 - Resource-removal targeting scope (whole pool vs. named subset vs. tier-scoped) and its default.

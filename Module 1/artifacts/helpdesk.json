@@ -467,6 +467,10 @@
       "Resolve ticket": 60405.0,
       "Take in charge ticket": 103523.0,
       "Wait": 58627.0
+    },
+    "__NO_RESOURCE__": {
+      "Insert ticket": 70037.0,
+      "Start": 70037.0
     }
   },
   "support_counts": {
@@ -593,6 +597,10 @@
       "Resolve ticket": 601,
       "Take in charge ticket": 515,
       "Wait": 273
+    },
+    "__NO_RESOURCE__": {
+      "Insert ticket": 0,
+      "Start": 0
     }
   },
   "excluded_pairs": [
@@ -1056,6 +1064,10 @@
     "Insert ticket",
     "Start"
   ],
+  "P_star": 5005630.1,
+  "normalization_cycle_time": 10000.0,
+  "_normalization_cycle_time_note": "Meneghello et al. (2024) default value (C=10000); not yet re-tuned for this dataset's lead-time scale.",
+  "ppi_window_n": 20,
   "config_used": {
     "n_tiers": 3,
     "n_min_support": 3,
@@ -1063,12 +1075,14 @@
     "tiering_method": "quantile",
     "processing_time_mode": "sojourn_approximation",
     "activity_prefix_filter": null,
+    "activity_merge_map": null,
+    "exclude_activities": null,
     "log_path": "../Event Logs/helpdesk_anonymized.csv"
   },
   "summary": {
-    "n_resources": 21,
+    "n_resources": 22,
     "n_activities": 7,
-    "n_eligible_pairs": 82,
+    "n_eligible_pairs": 84,
     "n_excluded_pairs": 91,
     "n_activities_at_risk": 2
   }

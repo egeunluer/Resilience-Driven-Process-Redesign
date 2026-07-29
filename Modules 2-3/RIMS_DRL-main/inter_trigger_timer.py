@@ -15,6 +15,7 @@ except ImportError:
     _PROPHET_AVAILABLE = False
 from numpy.random import triangular as triang
 import json
+import re
 
 class InterTriggerTimer(object):
 
@@ -63,7 +64,17 @@ class InterTriggerTimer(object):
 
     def generate_arrivals(self, num_instances, start_time):
         with open(self.params.MODEL_PROPHET, 'r') as fin:
-            m = model_from_json(json.load(fin))  # Load model
+            raw = json.load(fin)
+        # Compat shim: these Prophet models were serialized under an older pandas
+        # that wrote UTC timestamps with a trailing 'Z' (e.g. "...T09:00:00.000Z")
+        # in the table-schema JSON without also declaring a tz in the schema itself.
+        # Newer pandas' read_json(orient='table') is stricter and raises "cannot
+        # supply both a tz and a timezone-naive dtype" on that combination. These
+        # timestamps were never meaningfully tz-aware, so stripping the 'Z' is safe.
+        # (The raw file is itself a JSON-encoded string, so nested quotes are
+        # backslash-escaped — the optional \\ handles that.)
+        raw = re.sub(r'(\d{2}:\d{2}:\d{2}(?:\.\d+)?)Z(\\?)"', r'\1\2"', raw)
+        m = model_from_json(raw)  # Load model
         with open(self.params.METADATA_PROPHET) as file:
             max_cap = json.load(file)['max_cap']
         #start_time = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S")
