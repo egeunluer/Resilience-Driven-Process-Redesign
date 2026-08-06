@@ -45,9 +45,13 @@ class InterTriggerTimer(object):
         if self._type == 'distribution':
             resource = self._process._get_resource('TRIGGER_TIMER')
             arrival = getattr(np.random, self.name_distribution)(**self.params, size=1)[0]
-            # DEMAND_SPIKE: arrival_multiplier > 1 compresses inter-arrival time,
-            # increasing the effective case arrival rate by that factor.
-            arrival = arrival / self._process.arrival_multiplier
+            # D-demand-spike-fix: DEMAND_SPIKE no longer compresses arrivals
+            # here. All arrivals (both 'distribution' and 'custom' modes) are
+            # generated once, upfront, before any shock can possibly exist —
+            # arrival_multiplier is always 1.0 at this point, so dividing by
+            # it here was always a no-op. The real, live compression now
+            # happens by interrupting each token's Token.inter_trigger_time()
+            # wait when a shock actually fires (shock.py, event_trace.py).
             if calendar and resource._get_calendar():
                 stop = resource.to_time_schedule(self._start_time + timedelta(seconds=env.now + arrival))
                 self._interval = stop + arrival

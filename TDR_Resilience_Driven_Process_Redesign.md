@@ -30,6 +30,7 @@ The central deliverable is a **White-Box Resilience Engine**: a pipeline that ta
 - **RQ1:** How are shock and resilience concepts defined in Business Process Management literature and how can they be integrated into process simulations?
 - **RQ2:** How can the DRL agent learn to increase resilience of business processes in shock states and how can the performance of the agent be evaluated?
 - **RQ3:** How can the decision-making of the trained DRL agent be transformed into an admissible business process model, and does the generated process model accurately reflect the agent’s decisions?
+- **RQ4:** Are the resilience gains achieved by the DRL policy and the fidelity with which the redesign artifact represents that policy independent of one another, and under which combinations of the two can the White-Box Resilience Engine be considered valid?
 ---
 
 ## 4. Methodology Overview

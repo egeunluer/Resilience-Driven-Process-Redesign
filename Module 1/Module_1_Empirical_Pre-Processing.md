@@ -115,13 +115,41 @@ Persist as a structured artifact (JSON or pickle/parquet) with:
   "excluded_pairs": [
     {"resource": "<resource_id>", "activity": "<activity_name>", "reason": "..."}
   ],
+  "activities_at_risk": ["<activity_name>", ...],
   "config_used": {
     "n_tiers": 3,
     "tiering_method": "quantile",
     "processing_time_mode": "true | sojourn_approximation"
-  }
+  },
+  "P_star": <float>,
+  "normalization_cycle_time": <float>,
+  "ppi_window_n": <int>
 }
 ```
+
+**Fields added after the original spec, not covered above:**
+- **`activities_at_risk`** — activities that, after all exclusion filters (Section 5), would have
+  zero eligible resources. Each gets a synthetic placeholder resource (below) instead of the hard
+  error Section 5 originally specified.
+- **`P_star`** — historically the p95 of this log's per-case lead-time distribution, kept in the
+  artifact for reference. **This is not the value actually used for training or evaluation.** The
+  operative `P*` — `2 × pooled median(cycle_times)` from seeded, no-shock, least-used-policy
+  *simulation* baselines — is computed downstream, once per (dataset, resource pool) pair, by
+  `calibrate_resilience_constants.py` (Modules 2-3), and persisted to its own
+  `<dataset>_calibration.json`. See `Module_3_DRL_Environment_and_Agent.md` §5 for the definition
+  actually in force.
+- **`normalization_cycle_time`** — RF2's scaling constant `C` (Module 3 §5). Currently the literal
+  `10000` (Meneghello et al.'s original value) for every dataset, not re-tuned per dataset —
+  `_normalization_cycle_time_note` in the artifact records this explicitly.
+- **`ppi_window_n`** — rolling-window size (in completed traces) for the live PPI `φ(t)` computed
+  during simulation (Module 3 §5). Currently `20` for every dataset.
+
+**Synthetic placeholder resource.** For every activity in `activities_at_risk`, a resource named
+`"__NO_RESOURCE__"` is added to `resource_processing_times` with a neutral duration (that
+activity's dataset-wide median) and, at simulation time, effectively infinite capacity — a
+deadlock-avoidance mechanism, not a real staffing option. It is **excluded from
+`resource_tier_map`**, so it is invisible to Module 3's cluster-layer observation, the agent's
+action space, and Module 4's distillation — the agent can never select it and never sees it exist.
 
 ### How each artifact is consumed
 
@@ -156,9 +184,13 @@ agent's policy into human-readable rules referencing tier availability and activ
 
 - Every resource that appears in the event log must have at least one valid
   (resource, activity) processing time entry, or be fully excluded with a logged reason.
-- Every activity in the log must have at least one resource in at least one tier. If any
-  activity has no eligible resources after exclusions, raise a hard error — the simulator
-  would have no resource to assign to it.
+- Every activity in the log must have at least one resource in at least one tier, **or** be
+  listed in `activities_at_risk` and backed by the synthetic placeholder resource (Section 4) —
+  not left with zero eligible resources and no fallback, which would deadlock the simulator.
+  (An earlier version of this rule instead re-admitted the highest-support candidate that failed
+  the `n_min` filter as a fallback; this silently let a 2-observation outlier become the sole,
+  always-selected resource for an activity in one real case and was removed for that reason — see
+  `RIMS_DRL_Modification_Plan.md` Step 40. The placeholder-resource path replaces it.)
 - Report and log: number of tiers per activity, number of members per tier per activity,
   and any activities where the tier count was clamped below `n_tiers`.
 

@@ -53,8 +53,34 @@ class Token(object):
         return delete
 
     def inter_trigger_time(self, time):
-        yield self.env.timeout(time)
+        # D-demand-spike-fix: `time` is the case's normal-paced arrival delay
+        # (computed once, before any shock exists — see inter_trigger_timer.py).
+        # A live DEMAND_SPIKE interrupts this wait (shock.py) so it can be
+        # recomputed under the current arrival_multiplier instead of running
+        # to a fixed, pre-shock completion time. remaining_normal tracks
+        # progress in "normal pace" units; each segment converts that to real
+        # sim-time by dividing by whatever multiplier is active right now.
+        remaining_normal = time
+        while remaining_normal > 0:
+            multiplier = self._process.arrival_multiplier
+            wait = remaining_normal / multiplier
+            segment_start = self.env.now
+            try:
+                yield self.env.timeout(wait)
+                remaining_normal = 0
+            except simpy.Interrupt:
+                elapsed_real = self.env.now - segment_start
+                remaining_normal -= elapsed_real * multiplier
+                # loop again: re-read arrival_multiplier (may have changed
+                # again, e.g. shock ended) and wait out what's left.
         ### set arrival time ####
+        self._process.pending_arrival_procs.pop(self._id, None)
+        # D-demand-spike-fix: _start_trace was set at __init__ to the
+        # *planned* normal-pace arrival delay, not an actual timestamp — under
+        # compression/decompression the token can arrive earlier or later
+        # than that. Cycle-time accounting (`total_time = env.now -
+        # _start_trace` in simulation()) needs the true arrival instant.
+        self._start_trace = self.env.now
         self._buffer.set_feature("id_case", self._id)
         self._buffer.set_feature("activity", "start")
         self._buffer.set_feature("start_time", self._start_time + timedelta(seconds=self.env.now))

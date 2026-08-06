@@ -142,43 +142,61 @@ ShockType.DEMAND_SPIKE:
             is multiplied by (1 + fraction_m).
 ```
 
-### 3.2 Shock triggering — Poisson process
-*(The Module 2 text in the source proposal says the triggering distribution "is yet to be
-decided." The worked-out model appears later under "The Shock and Its Distribution" and is the
-correct mechanism to implement — restated here since Module 2's own text underspecifies it.)*
+### 3.2 Shock triggering — single shock per episode (supersedes the original Poisson-process design)
+*(The Module 2 text in the source proposal originally left the triggering distribution "yet to be
+decided," and an earlier version of this spec adopted a recurring homogeneous Poisson process —
+restated below for what it was, since the actual implementation has since diverged from it.)*
 
-- Shock **onsets** are a homogeneous Poisson process with rate `λ`: inter-shock intervals are
-  i.i.d. exponential with rate `λ`, onsets independent.
-- Implementation:
-  ```python
-  next_shock_delay = numpy.random.exponential(scale=1 / lambda_rate)
-  ```
-  scheduled relative to current simulation time, in the simulator's native time unit.
-- `λ` is a configurable hyperparameter (`shock_rate_lambda`), tuned per event log; no numeric
-  value is given in the proposal.
-- Shock **type**, **size** (`fraction_m`), and **target** (for resource removal) are each sampled
-  from a configurable range at each onset — see 3.3.
-- Shock **duration**: each shock persists for a configurable number of timesteps
-  (`shock_duration_min`, `shock_duration_max`, sampled uniformly, or a fixed constant). Not pinned
-  down numerically in the proposal — an open tuning decision.
+**As implemented:** each episode fires **exactly one shock**, right after a hidden warm-up phase
+(the simulator runs undisturbed for a short initial period first, via a least-used/FIFO-style
+policy internal to `reset()`, so the episode doesn't start mid-void). This replaced the original
+recurring Poisson-process scheduler after the latter was found to cause a livelock: a new shock
+could fire while a previous one's recovery was still in progress, and the environment's
+decision-epoch loop (`next_decision_moment()`) could stall indefinitely under compounding
+disruption. See `RIMS_DRL_Modification_Plan.md` Step 35 for the incident and fix.
 
-### 3.3 Training-time shock variety (required, not optional)
+- Shock **type**, **magnitude**, and **duration** are still sampled per episode from configured
+  ranges (train mode) or fully fixed (eval mode) — see 3.3/3.4. Only the *count* and *scheduling
+  mechanism* changed: one shock, deterministically placed right after warm-up, not a recurring
+  Poisson arrival process through the whole episode.
+- `λ` (`shock_rate_lambda` / `lambda_rate`) is **no longer read** by this flow — it only mattered
+  for the old recurring scheduler's inter-shock interval. Left as a vestigial config field in case
+  a recurring scheduler is reintroduced elsewhere; not part of the single-shock path.
+- Shock **duration**: a configurable range (train mode) or a fixed value (eval mode, and — as of
+  this project's own training-time alignment fix — also fixed in train mode, matched to the
+  calibrated/eval duration; see Module 3 §4). Concretely, `21,600s` (6h) for BPI2017 and Consulta's
+  calibration/eval runs.
+
+### 3.3 Training-time shock variety (still required, mechanism changed)
 If the agent only ever sees one fixed shock configuration, it overfits to that scenario.
-Therefore, **during training rollouts**, shock generation must vary across:
-- Both shock types (resource removal and demand spike) — sampled, not fixed per run.
-- A range of magnitudes (`fraction_m` from a configured range, e.g. uniform on `[m_min, m_max]`).
-- Random onset times (the Poisson process provides this).
-- Occasionally **overlapping/compound shocks** — a new shock may be triggered while a previous
-  one is still active. Overlap is permitted **only** in training mode.
+Therefore, **during training rollouts**, the single shock fired per episode still varies across:
+- Both shock types (resource removal and demand spike) — sampled per episode, not fixed.
+- A range of magnitudes (`fraction_m`/`magnitude` from a configured range). As implemented and
+  validated: `[5, 8]` for `DEMAND_SPIKE` (a 6x-9x arrival-rate multiplier — `1 + magnitude`),
+  established as the realistic ceiling by checking against real event-log arrival volatility
+  (`Training_Readiness_Implementation_Summary.md` §32); magnitude 20-100 was tested early on and
+  found to have no connection to plausible reality.
+- **Not** overlapping/compound shocks — with exactly one shock per episode, by construction there
+  is nothing for a second shock to overlap with. The original spec's "overlapping shocks permitted
+  only in training mode" no longer applies; there is no scenario, train or eval, where two shocks
+  are simultaneously active.
 
-### 3.4 Evaluation-time shock control (required, distinct from training mode)
-At **evaluation/test time**, shocks must NOT overlap, so that a clean before/during/after
-recovery curve is well-defined. A `mode: "train" | "eval"` flag governs this:
-- `mode="train"`: full random variety as in 3.3, overlaps allowed.
-- `mode="eval"`: **exactly one** shock per run, at a known, configured time, with a known,
-  configured type, magnitude, and target — fully deterministic, not sampled from the Poisson
-  process. This produces the baseline → hit → recovery curve used for the Kraus et al.
-  (2024)-style resilience graph (Resilience Metrics / Module 4).
+### 3.4 Evaluation-time shock control (still distinct from training mode, narrower gap now)
+At **evaluation/test time**, exactly one shock fires, at a known, fully fixed type/magnitude/
+duration/timing — unchanged from the original intent. The gap between train and eval mode is
+narrower than originally specified, now that both are single-shock: train mode samples
+type/magnitude per episode from a configured range (duration currently fixed, matched to eval —
+see 3.2); eval mode fixes all of type/magnitude/duration/onset-timing to one exact configuration.
+This produces the baseline → hit → recovery curve used for the Kraus et al. (2024)-style
+resilience graph (Resilience Metrics / Module 4) and for the TTI/MPD/RT/CPL metrics computed by
+`compute_resilience_metrics.py`.
+
+**Episode termination — no time-based cap.** Neither train nor eval episodes are cut off by a
+wall clock or a "give up waiting for recovery" backstop (an earlier `max_recovery_wait_s`
+safeguard was found to truncate episodes before genuine recovery — e.g. one episode reported as
+"never recovers," then confirmed to recover at 7.3 days once the cap was removed — and was deleted
+entirely). An episode ends only when `φ(t)` genuinely drops back to `<= P*` after a shock, or the
+trace population is exhausted, however long that takes.
 
 ### 3.5 Shock state exposed to the environment
 At every timestep, the shock mechanism exposes (for Module 3's observation space):
@@ -238,14 +256,25 @@ performance tier (for the cluster-layer behavioral log) is done by Module 3 usin
 
 ## 6. Open Implementation Decisions (flag before coding)
 
-- Numeric Poisson shock rate `λ` — not given; set/tune per event log.
-- Shock duration — fixed vs. sampled range; not numerically specified.
-- Range of `fraction_m` magnitudes for training — not numerically specified.
-- Deterministic median vs. sampling from the empirical duration array (2.2) — depends on whether
-  Module 1 retains per-pair samples; default deterministic.
-- Resource-removal targeting scope (whole pool vs. named subset vs. tier-scoped) and its default.
-- Pre-emption policy for resource removal — the "do not pre-empt in-progress tasks, block only new
-  assignments" default is the more realistic choice but is not explicitly stated in the proposal;
-  confirm.
-- Whether RIMS's native arrival generator can be cleanly rate-scaled for `DEMAND_SPIKE`; inspect
-  the chosen RIMS reference implementation before finalizing 3.1.
+- ~~Numeric Poisson shock rate `λ`~~ — **moot.** The recurring Poisson scheduler was replaced by
+  single-shock-per-episode (3.2); `λ` is no longer read by this flow.
+- ~~Shock duration~~ — **resolved.** Fixed at `21,600s` (6h) for the validated BPI2017/Consulta
+  calibration and resilience-metric runs (dataset-specific; Consulta's own calibration shock used
+  `72,000s`/20h — see `RIMS_DRL_Modification_Plan.md` Phase 21).
+- ~~Range of `fraction_m` magnitudes for training~~ — **resolved.** `DEMAND_SPIKE`: `[5, 8]`
+  (validated realistic ceiling, checked against real event-log arrival volatility —
+  `Training_Readiness_Implementation_Summary.md` §32). `RESOURCE_REMOVAL`'s standing under the
+  same fully-corrected methodology is not yet re-established (§39 of that document) — treat its
+  magnitude range as still open.
+- Deterministic median vs. sampling from the empirical duration array (2.2) — **still the
+  original default** (deterministic median); not revisited this project.
+- ~~Resource-removal targeting scope~~ — **resolved.** Activity-scoped by default (a given
+  magnitude now removes a fraction of one activity's own eligible pool, not the whole resource
+  pool), so a fixed magnitude is a meaningfully bigger capacity hit — see Step 38.
+- Pre-emption policy for resource removal — **unchanged from the original default** (no
+  pre-emption of in-progress tasks); not revisited this project.
+- ~~Whether RIMS's native arrival generator can be cleanly rate-scaled for `DEMAND_SPIKE`~~ —
+  **resolved: yes**, via interrupt-based arrival rescaling, confirmed by direct arrival-timestamp
+  instrumentation (Step 39). This shock type was found to be silently non-functional before that
+  fix — every result predating it should be treated as untrustworthy for `DEMAND_SPIKE`
+  specifically.

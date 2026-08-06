@@ -6,6 +6,7 @@ import numpy as np
 from gym_env import gym_env
 import datetime
 import sys
+import json
 
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy, MaskableMultiInputActorCriticPolicy
 from sb3_contrib import MaskablePPO
@@ -45,6 +46,12 @@ if len(sys.argv) > 1:
     _ = sys.argv[5]
     reward_function = sys.argv[6]
     artifact_path = sys.argv[7] if len(sys.argv) > 7 else None
+    # pool_override_path/calibration_path: the curated resource pool and the
+    # fixed P*/cpl_base/phi_fix calibration file this run must use (see
+    # calibrate_resilience_constants.py). Both required whenever shock_config
+    # is not None -- see the loud failure below, not a silent recompute.
+    pool_override_path = sys.argv[8] if len(sys.argv) > 8 else None
+    calibration_path = sys.argv[9] if len(sys.argv) > 9 else None
 else:
     NAME_LOG = 'BPI_Challenge_2017_W_Two_TS'
     N_TRACES = 'from_input_data'
@@ -52,27 +59,50 @@ else:
     threshold = 20
     reward_function = 'RF2'
     artifact_path = None   # set this to the Module 1 artifact path before running
+    pool_override_path = None
+    calibration_path = None
 
 # D9/D6: RF2's CPL budget fraction (CPL_max = p * CPL_base) and RF1's r1/r2 combination
-# weight. Defaults per Module_3_DRL_Environment_and_Agent.md §5/§8.
+# weight. Defaults per Module_3_DRL_Environment_and_Agent.md §5/§8. Must match
+# whatever calibrate_resilience_constants.py used for cpl_base -> cpl_budget.
 p_cpl_fraction = 0.5
 beta = 0.5
-# Number of random-policy rollouts used to calibrate RF1's phi_fix anchor (§8 default
-# calibration method: worst PPI observed over a set of random-policy rollouts).
-K_PHI_FIX_ROLLOUTS = 5
 
 
 # ---------------------------------------------------------------------------
 # Shock configuration (D5) — set to None to disable shocks entirely.
 # Import ShockConfig here and customise the fields before running.
+#
+# D-single-shock: gym_env now fires exactly one shock per episode itself (right
+# after its hidden warm-up phase, via shock.fire_single_shock), instead of using
+# this config's old recurring Poisson-process scheduler. type/magnitude/duration
+# are still sampled from shock_types/magnitude_range/duration_range below;
+# `lambda_rate` is no longer read anywhere in this flow (it only mattered for
+# the old recurring scheduler's inter-shock interval) — left here for reference
+# only, in case some other script still uses the recurring scheduler directly.
 # ---------------------------------------------------------------------------
 from shock import ShockConfig
 shock_config = ShockConfig(
     mode='train',
     shock_types=['RESOURCE_REMOVAL', 'DEMAND_SPIKE'],
-    magnitude_range=(0.2, 0.5),
-    duration_range=(1800.0, 7200.0),
-    lambda_rate=1 / 7200.0,   # one shock per 2 hours on average
+    # magnitude_range: was (0.2, 0.5) -- a 1.2x-1.5x arrival bump, far milder than
+    # what calibration/eval actually use. Every P*/cpl_base/phi_fix calibration
+    # and resilience-metric run this project has produced (calibrate_resilience_
+    # constants.py, compute_resilience_metrics.py) uses magnitude in [5, 8] (a
+    # 6x-9x arrival multiplier -- DEMAND_SPIKE's multiplier is 1+magnitude), the
+    # validated realistic range (Training_Readiness_Implementation_Summary.md
+    # SS32). Training on (0.2, 0.5) while being evaluated against [5, 8] would
+    # mean the agent rarely, if ever, practices on a shock severe enough to need
+    # a real recovery response during training. Matched to [5, 8] here so
+    # training and eval see the same disruption regime.
+    magnitude_range=(5.0, 8.0),
+    # duration_range: was (1800.0, 7200.0) (30min-2h) -- calibration/eval both use
+    # a fixed 21,600s (6h) shock (calibrate_resilience_constants.py,
+    # compute_resilience_metrics.py). Fixed here to the same 21,600s rather than
+    # sampled, for the same reason as magnitude_range above: training should see
+    # the same disruption regime it's evaluated against.
+    duration_range=(21600.0, 21600.0),
+    lambda_rate=1 / 7200.0,   # unused by the single-shock flow; see note above
 )
 # Set to None to train without shocks (baseline comparison).
 # shock_config = None
@@ -98,68 +128,51 @@ if __name__ == '__main__':
     os.makedirs(log_dir, exist_ok=True)
 
     # ---------------------------------------------------------------------------
-    # FIFO CPL calibration (D6): run one episode with a first-valid-action policy
-    # to establish CPL_base, the baseline for RF2's CPL_max = p * CPL_base constraint.
+    # Fixed calibration constants (P*, cpl_base -> cpl_budget, phi_fix): loaded
+    # from a file produced once by calibrate_resilience_constants.py, never
+    # recomputed live here. A live recompute on every launch was found to risk
+    # inconsistency across runs (different pool, different random draw, etc.);
+    # the whole point of this file is that every simulation on a given
+    # (dataset, pool) pair — calibration, training, eval — uses the exact same
+    # numbers. Fails loudly rather than silently falling back to zeros/None if
+    # shocks are enabled and no calibration file was given, or if the file's
+    # own recorded dataset/pool don't match what was requested here.
     # ---------------------------------------------------------------------------
+    p_star_override = None
     cpl_budget = 0.0
-    if reward_function == 'RF2' and shock_config is not None:
-        print('Running FIFO calibration episode for CPL_base...', flush=True)
-        cal_env = gym_env(
-            NAME_LOG, N_TRACES, CALENDAR,
-            threshold=threshold, postpone=False,
-            # reward_function must be 'RF2' here (not 'inverse_CT') — cpl_accumulated
-            # is only ever incremented inside the RF2 branch of gym_env.step(). Using
-            # 'inverse_CT' silently left cal_env.cpl_accumulated at 0.0 the whole
-            # episode, so CPL_base (and thus cpl_budget) was always 0.0 before this fix.
-            reward_function='RF2',
-            artifact_path=artifact_path,
-            shock_config=shock_config,
-        )
-        obs, _ = cal_env.reset()
-        done = False
-        while not done:
-            mask = cal_env.action_masks()
-            valid = [i for i, m in enumerate(mask) if m]
-            action = valid[0] if valid else 0   # always pick first eligible action (FIFO)
-            obs, _r, done, _, _ = cal_env.step(action)
-        cpl_base = cal_env.cpl_accumulated
-        cpl_budget = p_cpl_fraction * cpl_base   # CPL_max = p * CPL_base
-        print(f'FIFO CPL_base: {cpl_base:.4f} -> cpl_budget (p={p_cpl_fraction}): {cpl_budget:.4f}', flush=True)
-
-    # ---------------------------------------------------------------------------
-    # Random-policy phi_fix calibration (D9): run K episodes with a uniformly random
-    # valid-action policy under the shock regime, recording the worst (max) PPI
-    # observed per episode. phi_fix = the worst across all K episodes — RF1's
-    # disrupted-minimum anchor (Module_3 doc §5/§8 default calibration method).
-    # ---------------------------------------------------------------------------
     phi_fix = None
-    if reward_function == 'RF1' and shock_config is not None:
-        print(f'Running {K_PHI_FIX_ROLLOUTS} random-policy rollouts for phi_fix...', flush=True)
-        worst_ppi_per_episode = []
-        for k in range(K_PHI_FIX_ROLLOUTS):
-            rand_env = gym_env(
-                NAME_LOG, N_TRACES, CALENDAR,
-                threshold=threshold, postpone=False,
-                reward_function='RF1',
-                artifact_path=artifact_path,
-                shock_config=shock_config,
-                phi_fix=0.0,   # placeholder — unused by phi(t) tracking itself
+    if shock_config is not None:
+        if calibration_path is None:
+            raise ValueError(
+                "shock_config is set but no calibration_path was given. Run "
+                "calibrate_resilience_constants.py for this (dataset, pool) pair first, "
+                "then pass its output path as the 9th CLI argument."
             )
-            obs, _ = rand_env.reset()
-            done = False
-            worst_ppi = 0.0
-            while not done:
-                mask = rand_env.action_masks()
-                valid = [i for i, m in enumerate(mask) if m]
-                action = int(np.random.choice(valid)) if valid else 0
-                obs, _r, done, _, _ = rand_env.step(action)
-                worst_ppi = max(worst_ppi, rand_env._current_ppi())
-            worst_ppi_per_episode.append(worst_ppi)
-            print(f'  Rollout {k+1}/{K_PHI_FIX_ROLLOUTS}: worst PPI = {worst_ppi:.4f}', flush=True)
-        phi_fix = max(worst_ppi_per_episode)
-        print(f'phi_fix (worst PPI across {K_PHI_FIX_ROLLOUTS} rollouts): {phi_fix:.4f}', flush=True)
+        with open(calibration_path, 'r') as f:
+            calibration = json.load(f)
+        cfg = calibration.get('config_used', {})
+        if cfg.get('dataset') != NAME_LOG:
+            raise ValueError(
+                f"Calibration file {calibration_path} was computed for dataset "
+                f"'{cfg.get('dataset')}', not '{NAME_LOG}'. Refusing to reuse a "
+                f"mismatched calibration."
+            )
+        if pool_override_path is not None and cfg.get('pool') != pool_override_path:
+            raise ValueError(
+                f"Calibration file {calibration_path} was computed for pool "
+                f"'{cfg.get('pool')}', not '{pool_override_path}'. Refusing to reuse a "
+                f"mismatched calibration."
+            )
+        p_star_override = calibration['P_star']
+        cpl_budget = p_cpl_fraction * calibration['cpl_base']   # CPL_max = p * CPL_base
+        phi_fix = calibration['phi_fix']
+        print(f"Loaded calibration from {calibration_path}: "
+              f"P_star={p_star_override:.4f} cpl_base={calibration['cpl_base']:.4f} "
+              f"cpl_budget(p={p_cpl_fraction})={cpl_budget:.4f} phi_fix={phi_fix:.4f}", flush=True)
 
-    # Create and wrap the environment.
+    # Create and wrap the environment. pool_override_path/p_star_override keep
+    # training on the exact same curated pool and fixed P* the calibration file
+    # above was computed from (both None -- i.e. no-op -- if shocks are disabled).
     env_simulator = gym_env(
         NAME_LOG, N_TRACES, CALENDAR,
         threshold=threshold, postpone=False,
@@ -170,6 +183,8 @@ if __name__ == '__main__':
         eta_lambda=0.01,
         phi_fix=phi_fix,
         beta=beta,
+        pool_override_path=pool_override_path,
+        p_star_override=p_star_override,
     )
     env = Monitor(env_simulator, log_dir)
 
@@ -181,7 +196,8 @@ if __name__ == '__main__':
     # tensorboard --logdir ./tmp_training_2/
     model.set_logger(configure(log_dir, ["stdout", "csv", "tensorboard"]))
 
-    # Eval env shares the same shock_config so evaluation episodes include shocks.
+    # Eval env shares the same shock_config, pool, and P* so evaluation episodes
+    # include shocks and are directly comparable to training episodes.
     eval_env = gym_env(
         NAME_LOG, N_TRACES, CALENDAR,
         threshold=threshold, postpone=False,
@@ -192,6 +208,8 @@ if __name__ == '__main__':
         eta_lambda=0.01,
         phi_fix=phi_fix,
         beta=beta,
+        pool_override_path=pool_override_path,
+        p_star_override=p_star_override,
     )
     eval_env = Monitor(eval_env, log_dir)
     nr_evaluations = 10 if NAME_LOG != 'BPI_Challenge_2017_W_Two_TS' else 3

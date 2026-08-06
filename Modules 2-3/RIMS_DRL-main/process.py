@@ -32,8 +32,15 @@ class SimulationProcess(object):
         self.resource_processing_times = {}
         # D5: shock layer — populated by gym_env.reset() before simulation starts.
         self.shock_state = ShockState()
-        self.arrival_multiplier = 1.0   # read by InterTriggerTimer (DEMAND_SPIKE)
+        self.arrival_multiplier = 1.0   # read by Token.inter_trigger_time (DEMAND_SPIKE)
         self.shock_config = None        # set to a ShockConfig by gym_env if shocks are enabled
+        # D-demand-spike-fix: every token's not-yet-fired inter_trigger_time()
+        # SimPy process, keyed by token id. All arrivals are scheduled upfront
+        # in gym_env.reset(), before any shock can exist, so DEMAND_SPIKE can't
+        # affect them by changing arrival_multiplier alone — shock.py interrupts
+        # these processes directly so they recompute their remaining wait under
+        # the new multiplier. A token removes its own entry once it arrives.
+        self.pending_arrival_procs = {}
 
 
     def update_tokens_pending(self, token):

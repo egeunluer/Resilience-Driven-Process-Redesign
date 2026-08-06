@@ -19,6 +19,10 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
+# Must match gym_env.PLACEHOLDER_RESOURCE (duplicated, not imported, to avoid a
+# circular import — gym_env imports from this module, not the reverse).
+PLACEHOLDER_RESOURCE = '__NO_RESOURCE__'
+
 
 # ---------------------------------------------------------------------------
 # Configuration (set once at startup)
@@ -56,7 +60,24 @@ class ShockConfig:
     mode             : str     'train' or 'eval'.
     resource_groups  : dict    Maps group name → list of resource names.
                                Used by RESOURCE_REMOVAL to know which
-                               resources belong to each group.
+                               resources belong to each group. Takes priority
+                               over resource_removal_scope if non-empty.
+    resource_removal_scope : str
+        'activity' (default) or 'global'. Empirically, 'global' (uniform-
+        random draw from the whole registered resource pool) produced no
+        measurable disruption even at 6h duration on the single most
+        load-bearing resource — with a small pool (~19-22 resources) and load
+        concentrated on 2-3 of them, a global draw usually misses what
+        matters, and even a direct hit is diluted across a system with slack
+        everywhere else. 'activity' instead removes a fraction of the
+        resources eligible for one specific activity (that activity's own
+        pool is typically only ~6 people, from the tier-based pool design),
+        so the same magnitude is a much bigger fractional hit where it can
+        actually create a queue.
+    eval_target_activity : str, optional
+        Eval mode + scope='activity' only: which activity to target. If
+        None, one is chosen at random from the dataset's real (non-
+        placeholder-only) activities.
     """
     mode: str = 'train'
 
@@ -71,9 +92,11 @@ class ShockConfig:
     eval_shock_type: str = 'RESOURCE_REMOVAL'
     eval_magnitude: float = 0.3
     eval_duration: float = 3600.0
+    eval_target_activity: Optional[str] = None
 
     # shared
     resource_groups: dict = field(default_factory=dict)
+    resource_removal_scope: str = 'activity'
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +114,7 @@ class ShockState:
         self.active_type: Optional[str] = None
         self.active_magnitude: float = 0.0
         self.removed_resources: set = set()   # populated by RESOURCE_REMOVAL
+        self.removal_target_activity: Optional[str] = None  # set when scope='activity'
 
     def activate(self, shock_type: str, magnitude: float):
         self.is_active = True
@@ -102,6 +126,7 @@ class ShockState:
         self.active_type = None
         self.active_magnitude = 0.0
         self.removed_resources.clear()
+        self.removal_target_activity = None
 
     def __repr__(self):
         return (f"ShockState(active={self.is_active}, type={self.active_type}, "
@@ -146,6 +171,44 @@ def shock_scheduler(env, config: ShockConfig, state: ShockState, simulation_proc
             _apply_offset(shock_type, state, simulation_process)
 
 
+def fire_single_shock(env, config: ShockConfig, state: ShockState, simulation_process):
+    """
+    Fire exactly one shock, immediately (no inter-shock interval draw, no
+    recurrence) — used by gym_env.reset() for the single-shock-per-episode
+    training structure. This replaces shock_scheduler for training: that
+    function's infinite Poisson-recurring loop in 'train' mode is exactly what
+    made next_decision_moment()'s search unbounded (env.peek() could never
+    return math.inf, since another shock was always scheduled). Firing once
+    and never re-arming removes that failure mode entirely.
+
+    In 'eval' mode, uses the fixed eval_shock_type/eval_magnitude/eval_duration
+    fields (reproducible, controlled shock) rather than random sampling — the
+    onset *timing* is still decided by the caller (gym_env's warm-up
+    criterion), only type/magnitude/duration are fixed. In 'train' mode,
+    samples the same way shock_scheduler's train branch already does.
+
+    Returns (shock_type, magnitude, duration) for logging/diagnostics.
+    """
+    if config.mode == 'eval':
+        shock_type = config.eval_shock_type
+        magnitude = config.eval_magnitude
+        duration = config.eval_duration
+    else:
+        shock_type = random.choice(config.shock_types)
+        magnitude = random.uniform(*config.magnitude_range)
+        duration = random.uniform(*config.duration_range)
+
+    _apply_onset(env, shock_type, magnitude, config, state, simulation_process)
+    env.process(_delayed_single_offset(env, duration, shock_type, state, simulation_process))
+    return shock_type, magnitude, duration
+
+
+def _delayed_single_offset(env, duration, shock_type, state, simulation_process):
+    """One-shot SimPy process: waits `duration`, then applies the offset. No loop."""
+    yield env.timeout(duration)
+    _apply_offset(shock_type, state, simulation_process)
+
+
 # ---------------------------------------------------------------------------
 # Onset / offset helpers
 # ---------------------------------------------------------------------------
@@ -156,27 +219,66 @@ def _apply_onset(env, shock_type: str, magnitude: float,
     state.activate(shock_type, magnitude)
 
     if shock_type == 'RESOURCE_REMOVAL':
-        # Pick a random resource group (or all resources if none defined).
+        # Pick the candidate pool to remove from, in priority order:
+        # 1) an explicit resource_groups entry, if configured;
+        # 2) an activity's own eligible-resource pool (scope='activity',
+        #    the default — see ShockConfig docstring for why: a global draw
+        #    on a small pool with concentrated load usually misses what
+        #    matters);
+        # 3) the whole registered resource pool (scope='global', legacy
+        #    behaviour, kept for comparison).
         if config.resource_groups:
             group_name = random.choice(list(config.resource_groups.keys()))
             pool = config.resource_groups[group_name]
+        elif config.resource_removal_scope == 'activity':
+            pt_map = simulation_process.resource_processing_times
+            # Activities with at least one real (non-placeholder) eligible
+            # resource -- placeholder-only activities have nothing to remove.
+            real_activities = sorted({
+                act for res, acts in pt_map.items() if res != PLACEHOLDER_RESOURCE
+                for act in acts
+            })
+            if config.mode == 'eval' and config.eval_target_activity:
+                target_activity = config.eval_target_activity
+            elif real_activities:
+                target_activity = random.choice(real_activities)
+            else:
+                target_activity = None
+            state.removal_target_activity = target_activity
+            if target_activity is not None:
+                pool = [
+                    r for r, acts in pt_map.items()
+                    if r != PLACEHOLDER_RESOURCE and target_activity in acts
+                ]
+            else:
+                pool = []
         else:
             pool = list(simulation_process._resources.keys())
-            pool = [r for r in pool if r != 'TRIGGER_TIMER']
+            # PLACEHOLDER_RESOURCE must always stay available — it's the
+            # deadlock-avoidance fallback for zero-eligible-resource activities
+            # (Module 1 activities_at_risk), not a real resource to be shocked.
+            pool = [r for r in pool if r not in ('TRIGGER_TIMER', PLACEHOLDER_RESOURCE)]
 
-        n_remove = max(1, math.floor(len(pool) * magnitude))
-        # Choose which resources to remove (not already removed).
-        available = [r for r in pool if r not in state.removed_resources]
-        to_remove = random.sample(available, min(n_remove, len(available)))
-        for res_name in to_remove:
-            state.removed_resources.add(res_name)
-            role_sim = simulation_process._resources.get(res_name)
-            if role_sim is not None:
-                role_sim.mark_removed()
+        if pool:
+            n_remove = max(1, math.floor(len(pool) * magnitude))
+            # Choose which resources to remove (not already removed).
+            available = [r for r in pool if r not in state.removed_resources]
+            to_remove = random.sample(available, min(n_remove, len(available)))
+            for res_name in to_remove:
+                state.removed_resources.add(res_name)
+                role_sim = simulation_process._resources.get(res_name)
+                if role_sim is not None:
+                    role_sim.mark_removed()
 
     elif shock_type == 'DEMAND_SPIKE':
-        # InterTriggerTimer reads arrival_multiplier on each draw.
         simulation_process.arrival_multiplier = 1.0 + magnitude
+        # D-demand-spike-fix: all arrivals are scheduled upfront (before this
+        # shock existed), each waiting out a fixed duration computed under
+        # multiplier=1.0 — changing arrival_multiplier alone does nothing to
+        # a wait already in progress. Interrupt every not-yet-arrived token's
+        # wait so it recomputes its remaining time under the new multiplier
+        # (Token.inter_trigger_time, event_trace.py).
+        _interrupt_pending_arrivals(simulation_process)
 
 
 def _apply_offset(shock_type: str, state: ShockState, simulation_process):
@@ -189,5 +291,22 @@ def _apply_offset(shock_type: str, state: ShockState, simulation_process):
 
     elif shock_type == 'DEMAND_SPIKE':
         simulation_process.arrival_multiplier = 1.0
+        # Symmetric with onset: still-waiting tokens must also decompress
+        # back to normal pace for whatever time remains after the shock ends.
+        _interrupt_pending_arrivals(simulation_process)
 
     state.deactivate()
+
+
+def _interrupt_pending_arrivals(simulation_process):
+    """Wake every not-yet-arrived token's inter_trigger_time() wait so it
+    re-reads arrival_multiplier and recomputes its remaining delay. Silently
+    skips any process that has already finished (token already arrived) —
+    pending_arrival_procs may lag by exactly one event-loop tick behind
+    Token.inter_trigger_time's own cleanup, since interrupting is not
+    synchronous with the token popping itself out of the dict."""
+    for token_id, proc in list(simulation_process.pending_arrival_procs.items()):
+        try:
+            proc.interrupt()
+        except RuntimeError:
+            simulation_process.pending_arrival_procs.pop(token_id, None)

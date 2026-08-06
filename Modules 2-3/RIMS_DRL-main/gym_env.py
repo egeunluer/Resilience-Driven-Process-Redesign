@@ -1,6 +1,7 @@
 import gymnasium as gym
 from gymnasium import spaces, Env
 import numpy as np
+import random
 from typing import List
 import csv
 import simpy
@@ -13,6 +14,7 @@ import sys, getopt
 from utility import *
 import pm4py
 from inter_trigger_timer import InterTriggerTimer
+from shock import fire_single_shock
 import warnings
 import json
 import math
@@ -36,7 +38,7 @@ if __name__ == "__main__":
 
 
 class gym_env(Env):
-    def __init__(self, NAME_LOG, N_TRACES, CALENDAR, POLICY=None, N_SIMULATION=0, threshold=0, postpone=True, reward_function='inverse_CT', artifact_path=None, shock_config=None, cpl_budget=0.0, eta_lambda=0.01, phi_fix=None, beta=0.5) -> None:
+    def __init__(self, NAME_LOG, N_TRACES, CALENDAR, POLICY=None, N_SIMULATION=0, threshold=0, postpone=True, reward_function='inverse_CT', artifact_path=None, shock_config=None, cpl_budget=0.0, eta_lambda=0.01, phi_fix=None, beta=0.5, pool_override_path=None, p_star_override=None) -> None:
         self.name_log = NAME_LOG
 
         self.CALENDAR = CALENDAR ## "True" If you want to use calendar, "False" otherwise
@@ -70,13 +72,37 @@ class gym_env(Env):
         self.resource_processing_times = artifact['resource_processing_times']
         self.resource_tier_map = artifact['resource_tier_map']
         self.activities_at_risk = artifact.get('activities_at_risk', [])
+        # D-merge-fix: some datasets (e.g. Consulta) merge two raw Petri-net
+        # activity labels into one Module 1 activity for statistics purposes
+        # (activity_merge_map, Phase 9.6). The mined .pnml keeps the two
+        # original transitions, so tokens still ask for the native label —
+        # this map translates native -> merged wherever a token's activity is
+        # compared against the (Module-1-derived) action/task-type space.
+        # Empty for datasets that don't merge anything (no-op).
+        self.activity_merge_map = artifact.get('config_used', {}).get('activity_merge_map') or {}
         # D1/D9: P*, per-dataset normalization constant (C), and the PPI rolling
         # window size, all sourced from the Module 1 artifact (Phase 9).
-        self.P_star = artifact.get('P_star')
+        # p_star_override: a fixed P* computed once by calibrate_resilience_constants.py
+        # for a specific (dataset, pool) pair, held constant across every subsequent
+        # calibration/training/eval run on that pair. Takes priority over the
+        # artifact's own P_star (which is still the historical p95, not this
+        # simulator-native value) when given.
+        self.P_star = p_star_override if p_star_override is not None else artifact.get('P_star')
         self.normalization_cycle_time = artifact.get('normalization_cycle_time', self.normalization_cycle_time)
         self.ppi_window_n = artifact.get('ppi_window_n', 20)
 
         self.shock_config = shock_config  # D5: ShockConfig instance or None
+        # D-single-shock: single-shock-per-episode bookkeeping (only used when
+        # shock_config is not None). shock_fired/onset/offset are set fresh every
+        # reset(). No time-based recovery backstop: an episode ends only via
+        # genuine recovery (phi(t) <= P_star after the shock ends) or the trace
+        # population running out — a fixed 5x-duration backstop was found to
+        # truncate episodes well before real recovery happened (confirmed on a
+        # Consulta run that reported as truncated at the backstop but genuinely
+        # recovered at 7.3 days once the backstop was removed).
+        self.shock_fired = None
+        self.shock_onset_time = None
+        self.shock_offset_time = None
         # D6 (RF2): constrained-MDP parameters.
         self.cpl_budget = cpl_budget       # CPL_max = p * CPL_base (p applied by the caller)
         self.eta_lambda = eta_lambda       # Lagrange multiplier step size
@@ -98,7 +124,27 @@ class gym_env(Env):
         # time; the corresponding SimPy RoleSimulator is (re-)registered every reset().
         if self.activities_at_risk and PLACEHOLDER_RESOURCE not in self.resources:
             self.resources = sorted(self.resources + [PLACEHOLDER_RESOURCE])
-        self.task_types = sorted(list(input_data["processing_time"].keys()))
+
+        # pool_override_path: replace the full artifact-driven resource pool with a
+        # curated one (e.g. the zero-specialist pools built this session), the same
+        # way every scratchpad resilience-testing script this session did by hand.
+        # File format: {"curated_pt": {resource: {activity: processing_time}}, ...}.
+        # Folded into gym_env itself so calibration/training/eval scripts don't each
+        # re-implement this monkey-patch independently. Does not touch Module 1 or
+        # make curated pools the default anywhere.
+        self._pool_override_resource_names = None  # used again below, after self.params exists
+        if pool_override_path is not None:
+            with open(pool_override_path, 'r') as f:
+                pool_data = json.load(f)
+            curated_pt = pool_data['curated_pt']
+            pool_names = sorted(r for r in curated_pt.keys() if r != PLACEHOLDER_RESOURCE)
+            self.resource_processing_times = curated_pt
+            self.resources = sorted(set(pool_names) | ({PLACEHOLDER_RESOURCE} if PLACEHOLDER_RESOURCE in curated_pt else set()))
+            self._pool_override_resource_names = pool_names
+
+        self.task_types = sorted(set(
+            self._canonical_activity(t) for t in input_data["processing_time"].keys()
+        ))
 
         # Define the input and output of the agent (neural network)
         # The inputs are: 1) resource availability, 2) if a resource is busy, to what task_type, 3) number of tasks for each activity
@@ -127,6 +173,20 @@ class gym_env(Env):
         
         self.PATH_LOG = './example/' + self.name_log + '/' + self.name_log + '.xes'
         self.params = Parameters(PATH_PARAMETERS, self.N_TRACES, self.name_log, self.FEATURE_ROLE, threshold)
+
+        # pool_override_path, continued: ROLE_CAPACITY can only be rebuilt now that
+        # self.params exists. Keeps TRIGGER_TIMER's own entry untouched; every other
+        # resource is dropped except the curated pool's, each with its calendar from
+        # the full input file (default business-hours calendar if that resource has
+        # none recorded there).
+        if self._pool_override_resource_names is not None:
+            default_cal = {"days": [0, 1, 2, 3, 4], "hour_min": 8, "hour_max": 18}
+            new_role_capacity = {"TRIGGER_TIMER": self.params.ROLE_CAPACITY["TRIGGER_TIMER"]}
+            for r in self._pool_override_resource_names:
+                cal = input_data["resource"].get(r, {}).get("calendar", default_cal)
+                new_role_capacity[r] = [[r], {"days": cal["days"], "hour_min": cal["hour_min"], "hour_max": cal["hour_max"]}]
+            self.params.ROLE_CAPACITY = new_role_capacity
+
         # Eligible assignments: only (resource, activity) pairs present in the
         # Module 1 artifact (D4 min-support filter already applied there).
         self.output = self.retrieve_possible_assignments()
@@ -182,6 +242,12 @@ class gym_env(Env):
             return 0.0
         return float(np.mean(self.ppi_history))
 
+    def _canonical_activity(self, activity):
+        """D-merge-fix: translate a native Petri-net activity label to Module
+        1's merged label (no-op if this dataset has no activity_merge_map, or
+        if the activity isn't one of the merged ones)."""
+        return self.activity_merge_map.get(activity, activity)
+
     def retrieve_possible_assignments(self):
         # Build eligible (resource, activity) pairs from the Module 1 artifact.
         # A pair is eligible iff it survived the empirical processing-time computation
@@ -197,7 +263,19 @@ class gym_env(Env):
         else:
             return possible_assignment
 
-    def reset(self, seed=0, i=None):
+    def reset(self, seed=None, i=None):
+        # D-repro: seed, if given, was previously accepted but never applied —
+        # arrival timing (inter_trigger_timer.py), XOR-gateway branching
+        # (event_trace.py), and shock sampling (shock.py) all draw from the
+        # global random/np.random state with nothing controlling it, so two
+        # "identical" runs produced different results. Seeding here (rather
+        # than globally at import time) keeps training episodes free to stay
+        # unseeded/varied (callers that don't pass seed get today's behavior
+        # unchanged) while letting calibration code request reproducible runs
+        # via reset(seed=k).
+        if seed is not None:
+            random.seed(seed)
+            np.random.seed(seed)
         print('-------- Resetting environment --------')
         self.total_reward = 0
         self.reward_count = 0
@@ -213,6 +291,17 @@ class gym_env(Env):
         self.simulation_process = SimulationProcess(self.env, self.params, self.CALENDAR)
         # Populate the duration lookup so event_trace.py can access it (D1).
         self.simulation_process.resource_processing_times = self.resource_processing_times
+        # D-merge-fix: _resource_events (WIP-tracking, process.py) is built from
+        # the native Petri-net activity keys at SimulationProcess construction
+        # time, before this class's merged naming is known. Collapse any merged
+        # pair onto a single shared entry keyed by the merged name, so
+        # event_trace.py's _get_resource_event(action['task']) (which now always
+        # sees merged names) finds it. No-op if activity_merge_map is empty.
+        if self.activity_merge_map:
+            merged_events = {}
+            for native_key, ev in self.simulation_process._resource_events.items():
+                merged_events[self._canonical_activity(native_key)] = ev
+            self.simulation_process._resource_events = merged_events
         # Register the always-available placeholder resource for activities_at_risk
         # (Phase 10) — SimulationProcess is rebuilt fresh every reset(), so this must
         # be re-registered every episode.
@@ -220,10 +309,14 @@ class gym_env(Env):
             self.simulation_process._resources[PLACEHOLDER_RESOURCE] = RoleSimulator(
                 self.env, PLACEHOLDER_RESOURCE, math.inf, _ALWAYS_ON_CALENDAR
             )
-        # D5: register the shock SimPy process for this episode if shocks are configured.
+        # D-single-shock: shock_config is still stored on simulation_process for
+        # reference, but the recurring shock_scheduler is no longer started here —
+        # see the warm-up + fire_single_shock block near the end of this method.
+        # (shock_scheduler's train-mode infinite recurrence was exactly what made
+        # next_decision_moment()'s search unbounded: env.peek() could never return
+        # math.inf, since another shock was always scheduled next.)
         if self.shock_config is not None:
             self.simulation_process.shock_config = self.shock_config
-            self.simulation_process.start_shock_scheduler(self.env)
         self.completed_traces = []
         #if i != None:
 
@@ -252,14 +345,79 @@ class gym_env(Env):
             token = Token(i, net, im, self.params, self.simulation_process, prefix, 'sequential', writer, parallel_object,
                           itime, self.env, self.CALENDAR, None, _print=self.print)
             self.tokens[i] = token
-            self.env.process(token.inter_trigger_time(itime))
+            # D-demand-spike-fix: keep the process handle so a live DEMAND_SPIKE
+            # can interrupt still-waiting arrivals (see SimulationProcess.pending_arrival_procs).
+            self.simulation_process.pending_arrival_procs[i] = self.env.process(token.inter_trigger_time(itime))
 
         not_token_ready = True
         while not_token_ready:
             if len(self.simulation_process.tokens_pending) > 0:
                 not_token_ready = False
             self.env.step()
+
+        # D-single-shock: hidden FIFO warm-up, then fire exactly one shock, then
+        # hand control to the agent. The agent's first-ever step() in this episode
+        # coincides with the shock's onset instant — zero simulated time passes
+        # between "shock starts" and "agent decides".
+        self.shock_fired = None
+        self.shock_onset_time = None
+        self.shock_offset_time = None
+        if self.shock_config is not None:
+            warmup_steps = self._warm_up()
+            if len(self.tokens) > 0:   # guard: nothing left to disrupt if warm-up exhausted N_TRACES
+                shock_type, magnitude, duration = fire_single_shock(
+                    self.env, self.shock_config, self.simulation_process.shock_state,
+                    self.simulation_process,
+                )
+                self.shock_fired = (shock_type, magnitude, duration)
+                self.shock_onset_time = float(self.env.now)
+                self.shock_offset_time = self.shock_onset_time + duration
+                print(
+                    f'Shock fired at t={self.shock_onset_time:.1f} after {warmup_steps} warm-up steps: '
+                    f'type={shock_type} magnitude={magnitude:.3f} duration={duration:.1f} '
+                    f'phi(t)={self._current_ppi():.1f}', flush=True,
+                )
+            else:
+                print(
+                    f'WARNING: warm-up consumed all {self.N_TRACES} traces before phi(t) '
+                    f'stabilised — no shock fired this episode. Increase N_TRACES.', flush=True,
+                )
+            # Zero episode-scoped bookkeeping so it reflects the shock episode
+            # (onset onward), not the hidden warm-up. ppi_history/prev_ppi are
+            # deliberately left untouched — the warm-up-established phi(t)
+            # baseline is exactly what should carry forward.
+            self.total_reward = 0
+            self.reward_count = 0
+            self.cpl_accumulated = 0.0
+            self.prev_env_time = float(self.env.now)
+            self.u_k = 0.0
+            self.v_k = 0.0
+
         return self.get_state(), {}
+
+    def _warm_up(self):
+        """
+        D-single-shock: run a hidden, FIFO-driven warm-up before the agent's
+        first decision, until phi(t) is backed by a full rolling window
+        (ppi_window_n completed traces) — i.e. until phi(t) is a meaningful
+        baseline rather than 0.0 or a handful of samples. Not exposed to the
+        agent: reuses step() for the assignment/advance/reward machinery, but
+        every reward/CPL side effect it produces is discarded and re-zeroed by
+        the caller (reset()) immediately after this returns.
+        """
+        max_warmup_steps = 20000
+        steps = 0
+        while len(self.ppi_history) < self.ppi_window_n and steps < max_warmup_steps:
+            mask = self.action_masks()
+            valid = [i for i, m in enumerate(mask) if m]
+            if not valid:
+                break
+            action = valid[0]  # FIFO — first eligible action (matches the existing calibration convention)
+            _, _, terminated, truncated, _ = self.step(action)
+            steps += 1
+            if terminated or truncated:
+                break
+        return steps
 
     #!! The algorithm uses this function to interact with the environment
     # Every step is an observation (state, action, reward) which is used for training
@@ -281,7 +439,7 @@ class gym_env(Env):
 
         if self.output[action] != 'Postpone':
             token_id = None
-            tokens_pending = {k: v for k, v in self.simulation_process.tokens_pending.items() if v[0]._next_activity == self.output[action][1]}
+            tokens_pending = {k: v for k, v in self.simulation_process.tokens_pending.items() if self._canonical_activity(v[0]._next_activity) == self.output[action][1]}
             if len(tokens_pending) > 1:
                 #print(tokens_pending)
                 token_id = min(tokens_pending.keys()) # FIFO_case
@@ -364,8 +522,27 @@ class gym_env(Env):
 
         self.total_reward += reward
 
-        if len(self.tokens) == 0:
-            isTerminated = True
+        # D-single-shock: recovery-based termination. Only applies when a shock was
+        # actually fired this episode (self.shock_fired is not None) — shock-free
+        # runs (shock_config=None) and the hidden warm-up loop itself are unaffected,
+        # since shock_fired stays None for them. "Recovered" = the shock has ended
+        # (shock_state.is_active just became False, i.e. the offset event already
+        # fired) AND phi(t) has dropped back to/below P*.
+        recovered = (
+            self.shock_fired is not None
+            and self.P_star is not None
+            and not self.simulation_process.shock_state.is_active
+            and self._current_ppi() <= self.P_star
+        )
+        # No recovery backstop: an episode runs until phi(t) genuinely drops back
+        # to <= P_star or the trace population is exhausted, however long that
+        # takes — no time-based truncation. isTruncated is kept in the return
+        # tuple only for Gymnasium API compatibility; it is never set True here.
+        episode_done = len(self.tokens) == 0 or recovered
+        isTruncated = False
+
+        if episode_done:
+            isTerminated = episode_done
             self.cycle_times = [cycle_time for (trace_id, cycle_time) in self.simulation_process.traces['ended']]
             self.mean_cycle_time = np.mean([cycle_time for (trace_id, cycle_time) in self.simulation_process.traces['ended']])
             if self.reward_function in ('inverse_CT', 'RF2'):
@@ -388,9 +565,11 @@ class gym_env(Env):
             print('Mean reward per traces', self.total_reward/len(self.completed_traces), flush=True)
             print('Number of completed traces', len(self.completed_traces), flush=True)
             print('Nonzero reward count', self.reward_count, flush=True)
+            if recovered:
+                print(f'Recovered: phi(t)={self._current_ppi():.1f} <= P_star={self.P_star:.1f}', flush=True)
         else:
             isTerminated = False
-        return self.get_state(), reward, isTerminated, {}, {}
+        return self.get_state(), reward, isTerminated, isTruncated, {}
 
     def step_baseline(self, action):
         if action is not None:
@@ -423,7 +602,7 @@ class gym_env(Env):
                 possible_tasks.append(action[1])
         possible_ass = False
         for token in tokens:
-            if tokens[token][0]._next_activity in possible_tasks:
+            if self._canonical_activity(tokens[token][0]._next_activity) in possible_tasks:
                 possible_ass = True
         return possible_ass
 
@@ -490,7 +669,7 @@ class gym_env(Env):
         # for each activity: it counts how many tokens_pending are waiting the resource with that activity
         # It counts until 10 and normalize by 10
         if len(self.simulation_process.tokens_pending) > 0:
-            task_types_num = [min(1.0, sum([1 if self.simulation_process.tokens_pending[token][0]._next_activity == task_type else 0 for token in self.simulation_process.tokens_pending])/10) for task_type in self.task_types]
+            task_types_num = [min(1.0, sum([1 if self._canonical_activity(self.simulation_process.tokens_pending[token][0]._next_activity) == task_type else 0 for token in self.simulation_process.tokens_pending])/10) for task_type in self.task_types]
         else:
             task_types_num = [0.0 for _ in range(len(self.task_types))]
         #wip = [(len(env_state['traces']['ongoing'])+1)/1000]

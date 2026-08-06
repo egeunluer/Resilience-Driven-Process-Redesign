@@ -185,15 +185,6 @@
         "mean_processing_time_s": 65.38888888888889
       }
     },
-    "Transferir Creditos": {
-      "0": {
-        "label": "slow",
-        "members": [
-          "1343"
-        ],
-        "mean_processing_time_s": 1435767.025
-      }
-    },
     "Recepcion de documentos": {
       "0": {
         "label": "slow",
@@ -369,15 +360,6 @@
         "mean_processing_time_s": 72.5
       }
     },
-    "Cancelar curso": {
-      "0": {
-        "label": "slow",
-        "members": [
-          "19019"
-        ],
-        "mean_processing_time_s": 1518.975
-      }
-    },
     "Avanzar recepcion documentos": {
       "0": {
         "label": "slow",
@@ -467,8 +449,7 @@
       "Revisar curso": 1,
       "Validacion final": 0,
       "Validar solicitud": 2,
-      "Validar solicitud / pre-homologacion": 0,
-      "Cancelar curso": 0
+      "Validar solicitud / pre-homologacion": 0
     },
     "1707": {
       "Homologacion por grupo de cursos": 1,
@@ -517,8 +498,7 @@
     },
     "1343": {
       "Homologacion por grupo de cursos": 0,
-      "Visto Bueno Cierre Proceso": 0,
-      "Transferir Creditos": 0
+      "Visto Bueno Cierre Proceso": 0
     },
     "7177": {
       "Homologacion por grupo de cursos": 0
@@ -738,8 +718,7 @@
     },
     "1343": {
       "Homologacion por grupo de cursos": 9633.0,
-      "Visto Bueno Cierre Proceso": 8338.5,
-      "Transferir Creditos": 1435767.025
+      "Visto Bueno Cierre Proceso": 8338.5
     },
     "1422": {
       "Homologacion por grupo de cursos": 6748.0,
@@ -790,8 +769,7 @@
       "Revisar curso": 3.5,
       "Validacion final": 517.0,
       "Validar solicitud": 206.5,
-      "Validar solicitud / pre-homologacion": 335.0,
-      "Cancelar curso": 1518.975
+      "Validar solicitud / pre-homologacion": 335.0
     },
     "19295": {
       "Evaluacion curso": 26521.0
@@ -1046,10 +1024,12 @@
       "Visto Bueno Cierre Proceso": 12.0
     },
     "__NO_RESOURCE__": {
-      "End": 1518.975,
-      "Notificacion estudiante cancelacion soli": 1518.975,
-      "Start": 1518.975,
-      "Submit Request": 1518.975
+      "Cancelar curso": 1440.0,
+      "End": 1440.0,
+      "Notificacion estudiante cancelacion soli": 1440.0,
+      "Start": 1440.0,
+      "Submit Request": 1440.0,
+      "Transferir Creditos": 1440.0
     }
   },
   "support_counts": {
@@ -1083,8 +1063,7 @@
     "12935": {},
     "1343": {
       "Homologacion por grupo de cursos": 27,
-      "Visto Bueno Cierre Proceso": 14,
-      "Transferir Creditos": 2
+      "Visto Bueno Cierre Proceso": 14
     },
     "1378": {},
     "1422": {
@@ -1141,8 +1120,7 @@
       "Revisar curso": 10,
       "Validacion final": 8,
       "Validar solicitud": 72,
-      "Validar solicitud / pre-homologacion": 17,
-      "Cancelar curso": 2
+      "Validar solicitud / pre-homologacion": 17
     },
     "19214": {},
     "19295": {
@@ -1434,10 +1412,12 @@
       "Visto Bueno Cierre Proceso": 3
     },
     "__NO_RESOURCE__": {
+      "Cancelar curso": 0,
       "End": 0,
       "Notificacion estudiante cancelacion soli": 0,
       "Start": 0,
-      "Submit Request": 0
+      "Submit Request": 0,
+      "Transferir Creditos": 0
     }
   },
   "excluded_pairs": [
@@ -22749,7 +22729,7 @@
     {
       "resource": "1343",
       "activity": "Transferir Creditos",
-      "reason": "support_2_below_n_min_3_FALLBACK_READMITTED"
+      "reason": "support_2_below_n_min_3"
     },
     {
       "resource": "1343",
@@ -22969,7 +22949,7 @@
     {
       "resource": "19019",
       "activity": "Cancelar curso",
-      "reason": "support_2_below_n_min_3_FALLBACK_READMITTED"
+      "reason": "support_2_below_n_min_3"
     },
     {
       "resource": "19019",
@@ -24728,10 +24708,12 @@
     }
   ],
   "activities_at_risk": [
+    "Cancelar curso",
     "End",
     "Notificacion estudiante cancelacion soli",
     "Start",
-    "Submit Request"
+    "Submit Request",
+    "Transferir Creditos"
   ],
   "P_star": 6146114.0,
   "normalization_cycle_time": 10000.0,
@@ -24755,9 +24737,9 @@
   },
   "summary": {
     "n_resources": 80,
-    "n_activities": 13,
+    "n_activities": 11,
     "n_eligible_pairs": 173,
     "n_excluded_pairs": 4657,
-    "n_activities_at_risk": 4
+    "n_activities_at_risk": 6
   }
 }

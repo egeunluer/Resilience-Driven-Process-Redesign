@@ -333,9 +333,19 @@ def aggregate(
       2. Compute the median.
       3. Exclude pairs with support < n_min or median ≤ 0.
 
-    Fallback: if all resources for an activity are excluded by the n_min filter,
-    re-admit the resource with the highest support for that activity (with a
-    warning). This prevents simulator deadlock on rare activities.
+    No fallback re-admission: an activity where every candidate resource fails
+    the n_min filter is left with zero eligible resources here, on purpose.
+    validate() will flag it as at-risk, and the synthetic placeholder resource
+    (neutral, dataset-median duration) is what fills the gap downstream — not
+    a re-admitted pair backed by only 1-2 historical observations. An earlier
+    version of this function did re-admit the best low-support candidate as a
+    deadlock-prevention fallback; in practice that let a single 2-observation
+    outlier (Consulta's resource '1343' on 'Transferir Creditos', support=2,
+    median=1,435,767s / 16.6 days from just those 2 raw points) become the
+    *sole, always-selected* resource for an activity, which single-handedly
+    dominated simulated cycle times — a worse outcome than the placeholder
+    path it was meant to avoid. See Training_Readiness_Implementation_Summary.md
+    for the investigation that found this.
 
     Returns:
       resource_processing_times[resource][activity] = float (seconds)
@@ -372,37 +382,18 @@ def aggregate(
         resource_pt.setdefault(resource, {})[activity] = median_pt
         support_counts.setdefault(resource, {})[activity] = n
 
-    # Fallback: re-admit best resource for activities with zero eligible resources
-    admitted_by_activity = {
-        activity
-        for resource, acts in resource_pt.items()
-        for activity in acts
-    }
+    # Activities where every candidate failed the n_min filter are deliberately
+    # left with zero eligible resources here (no re-admission) — see the
+    # docstring above. They surface via validate()'s at-risk list and get the
+    # synthetic placeholder resource instead of an unreliable low-support pair.
     for activity, candidates in excluded_by_activity.items():
-        if activity not in admitted_by_activity:
-            # Pick the candidate with the highest support and a positive median
-            valid_candidates = [c for c in candidates if c["median_pt"] > 0]
-            if not valid_candidates:
-                continue  # truly hopeless; validation will raise
-            best = max(valid_candidates, key=lambda c: c["n"])
-            log.warning(
-                f"FALLBACK: activity '{activity}' had 0 eligible resources after n_min={n_min} "
-                f"filter — re-admitting '{best['resource']}' (support={best['n']}, "
-                f"median_pt={best['median_pt']:.0f}s). "
-                f"Use this pair's estimates with caution."
-            )
-            # Re-compute properly for this resource
-            grp = records[(records["resource"] == best["resource"]) & (records["activity"] == activity)]
-            pts = grp["pt"].values
-            cap = float(np.percentile(pts, cap_pct))
-            pts_capped = np.minimum(pts, cap)
-            median_pt = float(np.median(pts_capped))
-            resource_pt.setdefault(best["resource"], {})[activity] = median_pt
-            support_counts.setdefault(best["resource"], {})[activity] = best["n"]
-            # Mark in excluded list as re-admitted
-            for exc in excluded:
-                if exc["resource"] == best["resource"] and exc["activity"] == activity:
-                    exc["reason"] += "_FALLBACK_READMITTED"
+        best = max(candidates, key=lambda c: c["n"])
+        log.warning(
+            f"'{activity}': all {len(candidates)} candidate resource(s) failed the "
+            f"n_min={n_min} filter (best: '{best['resource']}', support={best['n']}, "
+            f"median_pt={best['median_pt']:.0f}s) — leaving as zero-eligible-resource "
+            f"(will get the placeholder resource, not this low-support estimate)."
+        )
 
     return resource_pt, support_counts, excluded
 

@@ -109,13 +109,29 @@ restored after duration `d`.
 **Type 2 — Arrival rate spike:** the case arrival rate is multiplied by a factor `k` for a
 duration `d`, generating a surge of incoming cases beyond the normal process load.
 
-**During training:** shocks arrive according to a Poisson process (rare, independent, random
-onset). Type, severity (`f` or `k`), and duration (`d`) are sampled from configurable ranges
-at each episode to prevent the agent from memorising a single scenario.
+**As implemented (supersedes the original Poisson-process description — see Module 2 §3.2 for the
+full mechanism and the livelock incident that caused the change):** exactly **one** shock fires
+per episode, right after a hidden warm-up phase, in both train and eval mode. There is no
+recurring Poisson arrival process and no overlapping/compound shocks in either mode.
+
+**During training:** type and magnitude are still sampled per episode from configurable ranges to
+prevent the agent from memorising a single scenario — as implemented, `DEMAND_SPIKE` magnitude
+`[5, 8]`, duration fixed at `21,600s` (matched to the eval/calibration duration, not sampled — see
+Module 2 §3.2/§3.4). `RESOURCE_REMOVAL`'s train-time range is unchanged from the original spec and
+not yet re-validated under the current methodology.
 
 **During evaluation:** a single shock of known type, severity, and timing is injected per
-episode. The shock onset moment is fixed, allowing clean measurement of the before/during/
-after recovery curve and computation of the resilience metrics (TI, MPD, RT, CPL).
+episode, exactly as originally specified. The shock onset moment is fixed, allowing clean
+measurement of the before/during/after recovery curve and computation of the resilience metrics
+(TTI, MPD, RT, CPL — see `compute_resilience_metrics.py`, which computes these independently from
+a logged `φ(t)` trajectory per the definitions in `Training_Readiness_Implementation_Summary.md`
+§27).
+
+**Episode termination — no time-based cap, in either mode.** An episode ends only when `φ(t)`
+genuinely recovers to `<= P*` after the shock, or the trace population is exhausted — never on a
+wall clock or a "stop waiting for recovery" timeout. An earlier backstop that did the latter
+(`max_recovery_wait_s`) was found to truncate episodes before real recovery occurred and was
+removed entirely; see Module 2 §3.4.
 
 ---
 
@@ -123,11 +139,27 @@ after recovery curve and computation of the resilience metrics (TI, MPD, RT, CPL
 
 Two candidate reward functions are implemented. Both operate on the process performance
 indicator (PPI) `φ(t)` — the running cycle time / average lead time of recently completed
-cases — under the modelling assumption that **lower PPI is better**. `φ(t | eⱼ)` denotes the PPI
-at time `t` under disruption `eⱼ`. Both use a consistent acceptable-performance level `P*`,
-defined as the **maximum PPI observed in the event log** (e.g. max cycle time / max average
-lead time) rather than a per-run pre-shock baseline, so the reference is consistent across
-simulations (Kraus et al., 2024).
+cases, a rolling mean over the last `ppi_window_n` (Module 1 §4, currently 20) completed traces,
+updated at every trace completion — under the modelling assumption that **lower PPI is better**.
+`φ(t | eⱼ)` denotes the PPI at time `t` under disruption `eⱼ`. Both use a consistent
+acceptable-performance level `P*`.
+
+**`P*`'s definition, as actually implemented (supersedes "maximum PPI observed in the event
+log" below).** `P* = 2 × pooled median(cycle_times)`, where the cycle times are pooled from **all**
+individual completed-trace cycle times across `n_baseline_seeds` seeded, no-shock,
+least-used-policy *simulation* baseline episodes — not read directly from the historical event
+log, and not a mean of per-seed medians. Computed once per (dataset, resource pool) pair by
+`calibrate_resilience_constants.py` and persisted to `<dataset>_calibration.json`; every
+subsequent simulation on that pair — calibration of `cpl_base`/`φ_fix`, training, and evaluation —
+loads and reuses the exact same value rather than recomputing it. This still satisfies the
+original intent below (a fixed reference, consistent across simulations); only the formula and
+data source changed.
+
+*(Original spec text, now superseded by the above: P\* was defined as the* **maximum PPI observed
+in the event log** *(e.g. max cycle time / max average lead time) rather than a per-run pre-shock
+baseline, so the reference is consistent across simulations (Kraus et al., 2024). That approach was
+abandoned after early testing found it produced scale mismatches with simulated `φ(t)` — see
+`Training_Readiness_Implementation_Summary.md` §31-35 for the investigation.)*
 
 ### Reward Function 1 — Potential-based recovery shaping + normalized deviation penalty
 
@@ -180,7 +212,16 @@ Definitions:
   continuous decision-epoch time `t_k` exposed by Module 2 — see Module 2 §4).
 - `B_k = B_{k-1} + d(k) · τ_k`, `B_0 = 0` — accumulated budget utilization; equals the resilience
   loss `∫ d(t) dt` (Bruneau et al., 2003).
-- `CPL_base` — total CPL of a non-adaptive baseline (e.g. FIFO) under the same shock.
+- `CPL_base` — total CPL of a non-adaptive baseline under the same shock, **mean-pooled across
+  `n_baseline_seeds` seeded episodes** (not a single episode — a single-episode design was found to
+  risk `cpl_base = 0` whenever that particular seed's `φ(t)` never happened to breach `P*`, which
+  would silently zero out this entire penalty term via the `u_k`/`v_k` divide-by-zero guard below;
+  see `Training_Readiness_Implementation_Summary.md` §37). **Baseline policy: least-used, not
+  literal FIFO.** The action-space's alphabetically-first-eligible-resource ordering (`valid[0]`)
+  was found to concentrate roughly 30%+ of assignments onto one resource — not a meaningful
+  non-adaptive baseline — so "least-used" (assign to whichever eligible resource currently has the
+  fewest cumulative assignments) is used instead, for `CPL_base` and everywhere else a baseline
+  policy is needed.
 - `CPL_max = p · CPL_base`, `p ∈ (0, 1]` — the budget; e.g. `p = 0.5` starts penalizing once the
   agent exceeds 50% of FIFO's CPL (Ray et al., 2019).
 - `u_k = B_k / CPL_max` — normalized budget utilization.
@@ -259,16 +300,14 @@ included in this log. Module 4 operates entirely on the cluster-layer representa
 
 ## 8. Open Implementation Decisions
 
-- Calibration of `φ_fix` in Reward Function 1 (the disrupted-minimum anchor). Default: the
-  worst PPI over a set of random-policy rollouts. A robust statistic (e.g. a high percentile of
-  the disrupted-window PPI) or the trough of a heuristic baseline (e.g. FIFO, consistent with
-  RF2's `CPL_base`) is preferable to the single worst value, which is outlier- and
-  sample-size-sensitive. Also fix `β ∈ (0, 1)`. Since `φ_fix` enters only through the constant
-  `|P* − φ_fix|`, its main effect is reward scaling — verify it keeps rewards O(1) and never near
-  zero.
-- Value of `p ∈ (0, 1]` in Reward Function 2 (the CPL budget as a fraction of FIFO's `CPL_base`)
-  — e.g. `p = 0.5` penalizes once the agent exceeds 50% of FIFO's CPL. Also tune the scaling
-  constant `C` (Meneghello et al. 2024 used 10000) and ensure `η_λ ≪ η_θ`.
+- ~~Calibration of `φ_fix` in Reward Function 1~~ — **resolved, the stated default was adopted
+  as-is.** `φ_fix` = the worst `φ(t)` observed across `K` (default 5) random-policy rollouts under
+  the same fixed shock used for `P*`/`cpl_base` calibration, computed by
+  `calibrate_resilience_constants.py` and persisted alongside `P*`/`cpl_base`. `β = 0.5`.
+- ~~Value of `p ∈ (0, 1]` in Reward Function 2~~ — **resolved: `p = 0.5`** (`p_cpl_fraction` in
+  `train_DRL.py`), matching the spec's own worked example exactly. `C = 10000`
+  (`normalization_cycle_time`, Module 1 §4), not re-tuned per dataset — recorded as an open
+  re-tuning item, not a correctness bug.
 - Whether to use a single pending-activity-at-a-time decision model or allow the agent to
   act on a batch of pending activities per step — the single-activity model is simpler and
-  recommended as the default.
+  recommended as the default. **Unresolved**; not revisited this project.
