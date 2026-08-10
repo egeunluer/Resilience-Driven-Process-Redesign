@@ -1,0 +1,158 @@
+{
+  "curated_pt": {
+    "User_55": {
+      "W_Assess potential fraud": 5991.389999999999
+    },
+    "User_144": {
+      "W_Assess potential fraud": 1914.793
+    },
+    "User_143": {
+      "W_Assess potential fraud": 1349.297
+    },
+    "User_138": {
+      "W_Assess potential fraud": 677.0264999999999
+    },
+    "User_90": {
+      "W_Call after offers": 164.55349999999999,
+      "W_Call incomplete files": 592.3905,
+      "W_Complete application": 1000.3355,
+      "W_Validate application": 114.223
+    },
+    "User_5": {
+      "W_Call after offers": 198.8755
+    },
+    "User_87": {
+      "W_Call after offers": 10.2605,
+      "W_Complete application": 580.9994999999999
+    },
+    "User_30": {
+      "W_Call after offers": 9.9085,
+      "W_Call incomplete files": 6.989
+    },
+    "User_29": {
+      "W_Call after offers": 4.019,
+      "W_Call incomplete files": 36.403,
+      "W_Complete application": 857.6445,
+      "W_Validate application": 174.019
+    },
+    "User_75": {
+      "W_Call after offers": 9.361,
+      "W_Call incomplete files": 65.662,
+      "W_Complete application": 745.2974999999999
+    },
+    "User_99": {
+      "W_Call incomplete files": 19343.094,
+      "W_Validate application": 816.501
+    },
+    "User_109": {
+      "W_Call incomplete files": 22.845
+    },
+    "User_18": {
+      "W_Complete application": 307.33849999999995,
+      "W_Handle leads": 82.74549999999999,
+      "W_Validate application": 71.76400000000001
+    },
+    "User_100": {
+      "W_Complete application": 439.974,
+      "W_Validate application": 4.3435
+    },
+    "User_27": {
+      "W_Handle leads": 388.467
+    },
+    "User_78": {
+      "W_Handle leads": 150.469
+    },
+    "User_23": {
+      "W_Handle leads": 88.243,
+      "W_Validate application": 4.419
+    },
+    "User_14": {
+      "W_Handle leads": 94.101
+    },
+    "User_2": {
+      "W_Handle leads": 70.244
+    },
+    "__NO_RESOURCE__": {
+      "W_Personal Loan collection": 193.858,
+      "W_Shortened completion": 193.858
+    }
+  },
+  "resource_to_activities": {
+    "User_138": [
+      "W_Assess potential fraud"
+    ],
+    "User_143": [
+      "W_Assess potential fraud"
+    ],
+    "User_55": [
+      "W_Assess potential fraud"
+    ],
+    "User_144": [
+      "W_Assess potential fraud"
+    ],
+    "User_30": [
+      "W_Call after offers",
+      "W_Call incomplete files"
+    ],
+    "User_5": [
+      "W_Call after offers"
+    ],
+    "User_75": [
+      "W_Call after offers",
+      "W_Call incomplete files",
+      "W_Complete application"
+    ],
+    "User_90": [
+      "W_Call after offers",
+      "W_Call incomplete files",
+      "W_Complete application",
+      "W_Validate application"
+    ],
+    "User_29": [
+      "W_Call after offers",
+      "W_Call incomplete files",
+      "W_Complete application",
+      "W_Validate application"
+    ],
+    "User_87": [
+      "W_Call after offers",
+      "W_Complete application"
+    ],
+    "User_109": [
+      "W_Call incomplete files"
+    ],
+    "User_99": [
+      "W_Call incomplete files",
+      "W_Validate application"
+    ],
+    "User_18": [
+      "W_Complete application",
+      "W_Handle leads",
+      "W_Validate application"
+    ],
+    "User_100": [
+      "W_Complete application",
+      "W_Validate application"
+    ],
+    "User_2": [
+      "W_Handle leads"
+    ],
+    "User_23": [
+      "W_Handle leads",
+      "W_Validate application"
+    ],
+    "User_14": [
+      "W_Handle leads"
+    ],
+    "User_78": [
+      "W_Handle leads"
+    ],
+    "User_27": [
+      "W_Handle leads"
+    ],
+    "__NO_RESOURCE__": [
+      "W_Personal Loan collection",
+      "W_Shortened completion"
+    ]
+  }
+}

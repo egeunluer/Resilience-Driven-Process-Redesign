@@ -1,0 +1,86 @@
+{
+  "curated_pt": {
+    "User_55": {
+      "W_Assess potential fraud": 5991.389999999999,
+      "W_Complete application": 665.328
+    },
+    "User_143": {
+      "W_Assess potential fraud": 1349.297,
+      "W_Validate application": 19.136
+    },
+    "User_138": {
+      "W_Assess potential fraud": 677.0264999999999,
+      "W_Validate application": 87.072
+    },
+    "User_87": {
+      "W_Call after offers": 10.2605,
+      "W_Call incomplete files": 78788.068
+    },
+    "User_29": {
+      "W_Call after offers": 4.019,
+      "W_Call incomplete files": 36.403
+    },
+    "User_3": {
+      "W_Call after offers": 192.073,
+      "W_Handle leads": 50.941500000000005
+    },
+    "User_30": {
+      "W_Call incomplete files": 6.989,
+      "W_Validate application": 499.537
+    },
+    "User_46": {
+      "W_Complete application": 981.238,
+      "W_Handle leads": 92.898
+    },
+    "User_36": {
+      "W_Handle leads": 191.731,
+      "W_Complete application": 529.1835
+    },
+    "__NO_RESOURCE__": {
+      "W_Personal Loan collection": 193.858,
+      "W_Shortened completion": 193.858
+    }
+  },
+  "resource_to_activities": {
+    "User_55": [
+      "W_Assess potential fraud",
+      "W_Complete application"
+    ],
+    "User_143": [
+      "W_Assess potential fraud",
+      "W_Validate application"
+    ],
+    "User_138": [
+      "W_Assess potential fraud",
+      "W_Validate application"
+    ],
+    "User_87": [
+      "W_Call after offers",
+      "W_Call incomplete files"
+    ],
+    "User_29": [
+      "W_Call after offers",
+      "W_Call incomplete files"
+    ],
+    "User_3": [
+      "W_Call after offers",
+      "W_Handle leads"
+    ],
+    "User_30": [
+      "W_Call incomplete files",
+      "W_Validate application"
+    ],
+    "User_46": [
+      "W_Complete application",
+      "W_Handle leads"
+    ],
+    "User_36": [
+      "W_Complete application",
+      "W_Handle leads"
+    ],
+    "__NO_RESOURCE__": [
+      "W_Personal Loan collection",
+      "W_Shortened completion"
+    ]
+  }
+}

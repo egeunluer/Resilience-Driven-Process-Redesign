@@ -1,6 +1,6 @@
 # RIMS_DRL Modification Record
 
-This document records every change made to the `RIMS_DRL-main` codebase, in execution order. All 46 steps are complete (Phases 17 and 20 list validated-but-not-yet-integrated work — see those sections; Phase 21 is where that methodology finally gets wired into production code for real). Both Consulta and BPI2017 are calibration-complete and training-ready as of Step 45, and train-time shocks now match the calibrated/eval regime as of Step 46. Each entry names the file, what was changed, and why.
+This document records every change made to the `RIMS_DRL-main` codebase, in execution order. All 55 steps are complete (Phases 17 and 20 list validated-but-not-yet-integrated work — see those sections; Phase 21 is where that methodology finally gets wired into production code for real). Consulta and BPI2017 are calibration-complete, training-ready, and have passed an end-to-end training smoke test with both shock types active as of Step 55. Helpdesk has a validated, citation-backed duration calibration and a corrected `P*` (Steps 47-50) but is not yet training-ready — its shock calibration remains open (see `Training_Readiness_Implementation_Summary.md` §45). Each entry names the file, what was changed, and why.
 
 ---
 
@@ -1016,6 +1016,191 @@ left unchanged — untouched, not evaluated as part of this fix.
 **Verified:** `ast.parse` on the edited file; `random.uniform` on a degenerate range confirmed to
 return the fixed value, not raise.
 
+### Step 47 — new `Modules 2-3/Helpdesk Preprocessing/build_helpdesk_engine_bundle.py` + `verify_helpdesk_bundle.py`
+
+**Why:** Unlike BPI2017/Consulta/PurchasingExample, Helpdesk shipped with no pre-existing
+`RIMS_DRL-main/example/<NAME_LOG>/` bundle at all — no `.pnml`, no `input_Helpdesk.json`. Module 1
+being complete for a dataset does not make it simulatable; the base engine's own per-dataset
+bundle has to exist too.
+
+**Done:** `build_helpdesk_engine_bundle.py` discovers a sound WF-net Petri net via
+`pm4py.discover_petri_net_inductive` on the raw CSV (all 9 activities, unfiltered — Module 1's own
+`config_used` confirms no `W_`-prefix/lifecycle filtering applies here), and assembles
+`input_Helpdesk.json` (`interTriggerTimer.type="distribution"` fit to real inter-arrival gaps,
+rather than `"custom"`/Prophet, since no trained arrival model exists for this log; `resource`
+dict excluding the `__NO_RESOURCE__` placeholder, which `gym_env.py` builds programmatically
+regardless of the input file; `resource_table`/`probability` either inert placeholders or omitted
+entirely, both confirmed dead/defaulted paths). A minimal `Helpdesk_dispr_meta.json` is also
+generated — required only because `Parameters.parameters_LSTM_model()` crashes without a METADATA
+file present (`PR_WIP_INITIAL` never set), even though every value it provides is itself dead code
+(traced every read; the one live call site is gated behind `FEATURE_ROLE=='all_role'`, which this
+file avoids by using the `_dispr` prefix). Bundle written to both the review folder and
+`RIMS_DRL-main/example/Helpdesk/`, since `gym_env.py`'s lookup path is hardcoded to the latter.
+`verify_helpdesk_bundle.py` round-trips the `.pnml` and runs a short `gym_env` construction +
+episode to confirm the bundle actually works before trusting it.
+
+**Found via this step, fixed in Step 48:** running the verification script surfaced a real crash
+in the base engine, not a bundle-construction mistake — see Step 48.
+
+### Step 48 — `inter_trigger_timer.py`: fixed a genuinely broken arrival mode
+
+**Why:** `verify_helpdesk_bundle.py` (Step 47) hung/deadlocked — tracing it down (event-queue
+instrumentation, `Token.simulation()` tracing) showed every one of Helpdesk's traces arriving at
+`env.now=0` simultaneously, flooding `next_decision_moment()` (which drains one event per call)
+before any real assignment could happen. Root cause: `get_next_arrival()`'s `'distribution'`
+branch computed `self._interval` from the drawn value but never folded it into `self._previous`
+(the line that would, `self._previous += self._interval`, was commented out) — `self._previous`
+stays at its `__init__` default of `0` forever, so every arrival's computed delay is discarded.
+This is not something the `'custom'` (Prophet-based) path used by BPI2017/Consulta could ever have
+hit, since it sets `self._previous` directly on its own line — the `'distribution'` mode had
+apparently never been exercised end-to-end before this session.
+
+**Done:** Restored `self._previous += self._interval`, scoped to the `'distribution'` branch only
+(the `'custom'` branch's own direct assignment is untouched, so this cannot change BPI2017/
+Consulta's already-validated behaviour).
+
+**Verified:** re-ran `verify_helpdesk_bundle.py` — a 100-trace no-shock episode now completes
+cleanly (100/100 traces, mean cycle time ≈48 days, consistent with the log's own ≈39-day median).
+
+### Step 49 — new `Module 1/concurrency_oracle_estimator.py` + `Module 1/validate_concurrency_oracle.py`
+
+**Why:** Helpdesk has only single (completion) timestamps per event, no start/complete pairs, so
+Module 1's existing `_compute_sojourn_pt` (gap since the previous event in the case) is the only
+duration source available for it — and it turned out to badly overshoot reality (Step 50). Before
+building a replacement, the replacement itself needed validating against known ground truth.
+
+**Done:** `concurrency_oracle_estimator.py` implements per-event start-time estimation via a
+Directly-Follows concurrency oracle (two activities are "concurrent" if the log shows both
+directly-follows orderings between them) plus `max(case_enabling_time, resource_available_time)`
+— the general technique from Chapela-Campa/Dumas et al.'s start-time-estimation line of work,
+reimplemented directly rather than depending on the archived `start-time-estimator` package (its
+successor, `pix-framework`, requires Python <3.12, incompatible with this environment).
+`validate_concurrency_oracle.py` hides BPI2017's and Consulta's real start timestamps and checks
+how well both the naive sojourn approximation and the new estimator recover the known-true
+per-(resource, activity) durations. Result: the concurrency-oracle estimator is a real
+improvement (~36x lower median absolute error than naive on BPI2017), but both methods perform
+poorly on the "human-scale" (non-instant) activities that actually drive simulated congestion —
+near-zero/negative correlation with ground truth on BPI2017 specifically, better (positive,
+~0.32) on Consulta. Read as: per-event duration recovery from single-timestamp logs remains
+unreliable for processes with heavy resource multitasking (BPI2017), less so for more
+sequential/one-case-at-a-time processes (Consulta).
+
+### Step 50 — new `Modules 2-3/Helpdesk Preprocessing/build_helpdesk_co_pool.py` + `calibrate_helpdesk_duration_scale.py`
+
+**Why:** Applying the naive sojourn approximation to Helpdesk's own pool inflated its simulated
+`P*` to ~1,130 days (29x the real log's own median cycle time) — resources were modeled as fully
+blocked for the entire sojourn gap, most of which is real-world non-blocking wait time. Applying
+the (BPI2017/Consulta-validated) concurrency-oracle estimator instead *undershot* by ~71x (0.5
+simulated days vs. 39.1 real days) — Helpdesk's ~21 resources each handle hundreds to thousands of
+tickets over the log's span, so "when did this resource last do anything" collapses to "almost
+always very recently," stripping out genuine wait time along with the artificial kind. Neither
+per-event method transfers to this dataset.
+
+**Done:** `build_helpdesk_co_pool.py` builds a CO-based pool variant for reference (kept, not
+used further). `calibrate_helpdesk_duration_scale.py` instead calibrates a single dataset-wide
+scale factor `k`, applied uniformly to the *existing naive-pool durations'* relative structure,
+found via bisection search in log-space against the one statistic reliably known for this
+dataset: the real log's own median cycle time (3,375,171s/39.1d). This follows the same
+methodological pattern as Simod's (Camargo, Dumas & González-Rojas, 2020, *Decision Support
+Systems*) hyper-parameter search against a real-log-derived similarity measure, and general DES
+model-calibration practice (De Santis et al., 2021, *Annals of Operations Research*; Law &
+Kelton, *Simulation Modeling and Analysis*) — search over a free parameter until simulated output
+matches a real output statistic, then validate against an independent one not used in the fit.
+Full citation text: `Modules 2-3/Helpdesk Preprocessing/Duration_Calibration_Methodology.md`.
+
+**Result:** converged at `k=0.36478` (5 iterations). Fit target (median): +14.8% (within the 15%
+tolerance). Held-out checks: mean +8.2% (better than the fit itself), p95 +36.8% (a documented
+limitation — a single uniform scale factor corrects overall pace but not tail/variance shape).
+
+### Step 51 — `calibrate_resilience_constants.py`: `--p-star-formula {median,mean}` option
+
+**Why:** PurchasingExample's cycle-time distribution turned out to be sharply bimodal (pooled
+median 0.39d vs. pooled mean 8.45d across 8 no-shock seeds) — `P* = 2×median`, the standard
+definition used everywhere else, left the baseline (no-shock) system in breach 85-93% of the
+time, purely from normal variance in a rolling-mean statistic being compared against a threshold
+anchored to the fast majority of a bimodal distribution.
+
+**Done:** Added `--p-star-formula` (`'median'` default, unaffected for every existing dataset;
+`'mean'` as an explicit, dataset-scoped override). `calibrate_p_star()` now also always prints the
+pooled mean alongside the median, regardless of which formula is selected, so the choice is
+auditable from the log. Recorded in `config_used.p_star_formula`. Verified only via PurchasingExample
+so far — `2×mean` reduced baseline breach to 26-37% (better, though not fully resolved) — see
+`Training_Readiness_Implementation_Summary.md` §47.
+
+### Step 52 — `calibrate_resilience_constants.py`: `--pool` made optional
+
+**Why:** PurchasingExample's resource distribution (27 named individuals, minimum 3 activities per
+resource) didn't need a curated "generalist" pool the way BPI2017/Consulta/Helpdesk's did — the
+full artifact-driven resource set was already healthy. The CLI's `--pool` was `required=True`,
+forcing every dataset through a pool file even when there was nothing to curate.
+
+**Done:** Changed to `default=None`. `build_env`/`gym_env` already handled `pool_override_path=None`
+correctly (falls back to the artifact's own resource set) — this was a CLI-parser-only fix, no
+behavioural change to any dataset that does pass `--pool`.
+
+### Step 53 — `train_DRL.py`: removed a dead, version-incompatible import
+
+**Why:** A Consulta training smoke test (first attempt) crashed immediately on startup:
+`ImportError: cannot import name 'normalize' from 'gymnasium.wrappers'`. The installed gymnasium
+version (1.2.3) restructured that module; `normalize` is no longer exported there.
+
+**Done:** Grepped the file — `normalize` was imported and never referenced anywhere else.
+Removed the dead import line entirely rather than chasing a currently-correct replacement import
+for code that isn't used.
+
+**Verified:** re-ran the smoke test; import error gone, training proceeded to environment
+construction.
+
+### Step 54 — `train_DRL.py`: train-time `shock_types` restricted to `['DEMAND_SPIKE']`
+
+**Why:** With the Step 53 fix applied, the same smoke test ran real training rollouts
+successfully for a while, then crashed with `IndexError: list index out of range` at
+`gym_env.py:450` (`token_id = list(tokens_pending.keys())[0]`), immediately after a
+`RESOURCE_REMOVAL` shock fired with `magnitude=7.753`. Root cause: `RESOURCE_REMOVAL`'s
+`magnitude` means "fraction of the eligible pool to remove" (`n_remove =
+max(1, math.floor(len(pool) * magnitude))`), but `train_DRL.py`'s `shock_config` shares
+`magnitude_range=(5.0, 8.0)` with `DEMAND_SPIKE`, where the same range means a 6x-9x arrival
+multiplier (`1+magnitude`) — a magnitude of 5-8 applied as a *removal fraction* clamps to removing
+100% of an activity's eligible resources. A token already pending for that activity is then
+stranded with zero eligible resources for the rest of the episode — a case Module 1's
+`activities_at_risk`/placeholder-resource mechanism was never designed to cover, since that's a
+static, historical-data-driven check, not a runtime one. The exact mechanism connecting the
+stranded token to *this specific* `IndexError` a few steps later wasn't fully traced before this
+was deferred (per explicit user instruction: shock magnitude/duration is not to be adjusted
+without asking first — see the standing-rule note in `Training_Readiness_Implementation_Summary.md`
+§45).
+
+**Done (interim fix, not a real fix):** `shock_types` narrowed from
+`['RESOURCE_REMOVAL', 'DEMAND_SPIKE']` to `['DEMAND_SPIKE']` only, with an inline comment
+explaining why and what needs to happen before re-enabling `RESOURCE_REMOVAL` (its own,
+correctly-scaled `[0,1]`-range magnitude, separate from `DEMAND_SPIKE`'s).
+
+**Verified:** re-ran the smoke test (Consulta, 5,120 steps) — completed cleanly, only
+`DEMAND_SPIKE` shocks fired, one full PPO rollout + policy update completed, `model_final.zip`
+saved. First successful end-to-end training smoke test this project has produced.
+
+### Step 55 — `shock.py`, `train_DRL.py`: `RESOURCE_REMOVAL` given its own magnitude range (real fix, superseding Step 54's interim `DEMAND_SPIKE`-only restriction)
+
+**Why:** Step 54's restriction avoided the crash but didn't fix the actual bug — `RESOURCE_REMOVAL`
+and `DEMAND_SPIKE` were sharing one `ShockConfig.magnitude_range` field with incompatible
+semantics (a multiplier for one, a removal fraction that must stay in `[0,1]` for the other).
+
+**Done:** `ShockConfig` gained a new field, `resource_removal_magnitude_range` (default `(0.2,
+0.5)`, this project's original, never-recalibrated `RESOURCE_REMOVAL` range — unrelated to
+`DEMAND_SPIKE`'s own calibration-driven `(5.0, 8.0)`). Both places that draw a train-mode
+magnitude (`shock_scheduler`'s and `fire_single_shock`'s `else` branches) now select
+`resource_removal_magnitude_range` when `shock_type == 'RESOURCE_REMOVAL'`, `magnitude_range`
+otherwise. `magnitude_range`'s docstring updated to state it is now `DEMAND_SPIKE`-only.
+`train_DRL.py`'s `shock_config` re-enables `shock_types=['RESOURCE_REMOVAL', 'DEMAND_SPIKE']` and
+sets `resource_removal_magnitude_range=(0.2, 0.5)` explicitly.
+
+**Verified:** re-ran the smoke test (Consulta, 5,120 steps, RF1) with both shock types active.
+213 shocks fired (101 `DEMAND_SPIKE`, 112 `RESOURCE_REMOVAL`) — no crash, and every single
+`RESOURCE_REMOVAL` magnitude logged fell correctly within `[0.2, 0.5]` (spot-checked the full run:
+e.g. 0.211, 0.255, 0.339, 0.499 — no more 100%-of-pool clamping). One full PPO rollout + policy
+update completed, `model_final.zip` saved. `RESOURCE_REMOVAL` is confirmed working correctly in
+training, not just no-longer-crashing.
+
 ---
 
 ## Execution order summary
@@ -1066,6 +1251,15 @@ return the fixed value, not raise.
 | 42 | `gym_env.py` | Added `pool_override_path`/`p_star_override` constructor params — loads a curated resource pool and/or a fixed `P*` in-process, folding this session's scratchpad monkey-patch pattern into real code |
 | 43 | new `calibrate_resilience_constants.py` | Checked-in script computing and persisting `P_star` (2×pooled median), `cpl_base` (mean `cpl_accumulated` pooled across seeds, not a single episode), and `phi_fix` for a given (dataset, pool) pair |
 | 44 | `train_DRL.py` | Removed inline FIFO/random-policy calibration; loads the persisted calibration file instead (new CLI args: `pool_override_path`, `calibration_path`), failing loudly on a missing or mismatched file |
+| 47 | new `build_helpdesk_engine_bundle.py`, `verify_helpdesk_bundle.py` | Built Helpdesk's RIMS_DRL engine bundle from scratch (`.pnml` via Inductive Miner, `input_Helpdesk.json`, minimal `_dispr_meta.json`) — no pre-existing bundle shipped for this dataset |
+| 48 | `inter_trigger_timer.py` | Fixed the `'distribution'` arrival mode: `self._previous += self._interval` was commented out, so every arrival was silently scheduled at `t=0` — found via Helpdesk bundle verification |
+| 49 | new `concurrency_oracle_estimator.py`, `validate_concurrency_oracle.py` | Directly-Follows concurrency-oracle start-time estimator + BPI2017/Consulta ground-truth validation (real improvement over naive, but unreliable on human-scale activities for both) |
+| 50 | new `build_helpdesk_co_pool.py`, `calibrate_helpdesk_duration_scale.py` | Helpdesk duration calibration: single global scale factor `k=0.36478` found via bisection search against the real log's median cycle time (citation-backed methodology, see `Duration_Calibration_Methodology.md`) |
+| 51 | `calibrate_resilience_constants.py` | Added `--p-star-formula {median,mean}` — dataset-scoped override for heavily bimodal cycle-time distributions (PurchasingExample) |
+| 52 | `calibrate_resilience_constants.py` | `--pool` made optional (was `required=True`) — some datasets' resource distributions don't need a curated pool |
+| 53 | `train_DRL.py` | Removed dead `from gymnasium.wrappers import normalize` import — incompatible with installed gymnasium 1.2.3, crashed training on startup |
+| 54 | `train_DRL.py` | Train-time `shock_types` restricted to `['DEMAND_SPIKE']` only (interim) — `RESOURCE_REMOVAL` shares a magnitude range meant for `DEMAND_SPIKE`'s multiplier semantics, causing 100%-of-pool removal and a stranded-token crash |
+| 55 | `shock.py`, `train_DRL.py` | Real fix superseding Step 54: new `resource_removal_magnitude_range` field on `ShockConfig` (default `(0.2, 0.5)`), used only for `RESOURCE_REMOVAL` draws; `RESOURCE_REMOVAL` re-enabled in `train_DRL.py` |
 
 **Milestones:**
 - Steps 1–4: code runs without TensorFlow/Prophet
@@ -1092,3 +1286,8 @@ return the fixed value, not raise.
 - Steps 41-44: Phase 20's methodology wired into production for real — backstop removed from `gym_env.py`, pool/`P*` overrides added, a real calibration script created, `train_DRL.py` now loads a persisted calibration file instead of recomputing inline. Consulta's calibration file is complete and correct (including a fix to `cpl_base`, which a single-seed design had been silently zeroing out).
 - Step 45: `--n-traces-baseline` added to `calibrate_resilience_constants.py` — isolates the one genuinely slow stage (the no-shock `P*` baseline, which can never recovery-terminate early) from the shocked stages (`cpl_base`/`phi_fix`, which already terminate on recovery in ~90-130 traces). BPI2017's calibration resumed and completed: `P_star=3816.5s`, `cpl_base=167,982,158.72`, `phi_fix=8092.11s`. Both Consulta and BPI2017 are now calibration-complete and training-ready — see `Training_Readiness_Implementation_Summary.md` §37-40.
 - Step 46: `train_DRL.py`'s train-time `shock_config` aligned to the calibrated/eval shock — `magnitude_range` `(0.2, 0.5)` → `(5.0, 8.0)`, `duration_range` `(1800.0, 7200.0)` → fixed `(21600.0, 21600.0)`. Closes the last flagged gap: training and evaluation now see the same disruption regime — see `Training_Readiness_Implementation_Summary.md` §41.
+- Steps 47-48: Helpdesk's RIMS_DRL engine bundle built from scratch (no pre-existing bundle shipped for this dataset, unlike BPI2017/Consulta/PurchasingExample) — surfaced and fixed a real, previously-unexercised engine bug in the `'distribution'` arrival mode along the way.
+- Step 49: concurrency-oracle-based start-time estimation implemented and validated against BPI2017/Consulta ground truth before ever being trusted on Helpdesk — a real improvement over the naive sojourn approximation, but not reliable enough on its own for human-scale activities.
+- Step 50: Helpdesk's duration-estimation problem resolved via a citation-backed single global scale-factor calibration (median fit +14.8%, mean held-out +8.2%, p95 held-out +36.8% — documented limitation) rather than continuing to chase a better per-event heuristic.
+- Steps 51-52: `calibrate_resilience_constants.py` generalized (`--p-star-formula`, optional `--pool`) to support PurchasingExample's different resource/distribution characteristics without touching any already-validated dataset's behaviour.
+- Steps 53-55: first end-to-end training smoke test run (Consulta) — found and fixed a dead-import crash (Step 53) and a `RESOURCE_REMOVAL` magnitude-range bug, first via an interim `DEMAND_SPIKE`-only restriction (Step 54) then a real fix giving `RESOURCE_REMOVAL` its own correctly-scaled range (Step 55). Both shock types now verified working together in training (213 shocks fired cleanly, all `RESOURCE_REMOVAL` magnitudes correctly bounded). See `Training_Readiness_Implementation_Summary.md` §48-49 for the full narrative, and §45/§47 for Helpdesk's and PurchasingExample's current (not-yet-training-ready) status.

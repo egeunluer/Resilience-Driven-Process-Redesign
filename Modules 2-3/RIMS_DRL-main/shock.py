@@ -42,11 +42,31 @@ class ShockConfig:
         Which shock types to sample from. Subset of {'RESOURCE_REMOVAL',
         'DEMAND_SPIKE'}.
     magnitude_range : tuple[float, float]
-        (min, max) fraction for both shock types.  For RESOURCE_REMOVAL this
-        is the fraction of resources removed; for DEMAND_SPIKE it is the
-        fractional rate increase (so 0.5 → arrival rate × 1.5).
+        (min, max) fractional rate increase for DEMAND_SPIKE only (so 0.5 →
+        arrival rate × 1.5; the calibrated/eval regime uses 5-8, i.e. a
+        6x-9x multiplier via 1+magnitude). NOT used for RESOURCE_REMOVAL —
+        see resource_removal_magnitude_range. These two were incorrectly
+        sharing this one field until the bug below was found and fixed:
+        RESOURCE_REMOVAL's magnitude means "fraction of the eligible pool to
+        remove" (must stay in [0,1]), so drawing from DEMAND_SPIKE's
+        validated 5-8 range clamped every RESOURCE_REMOVAL shock to removing
+        100% of an activity's eligible resources — stranding any token
+        already pending for that activity with zero eligible resources for
+        the rest of the episode, which crashed training
+        (IndexError in gym_env.step(), found via a Consulta training smoke
+        test). RESOURCE_REMOVAL was disabled for training until this field
+        was split out; see resource_removal_magnitude_range below.
+    resource_removal_magnitude_range : tuple[float, float]
+        (min, max) fraction of the eligible resource pool to remove, for
+        RESOURCE_REMOVAL only. Must stay within [0, 1] — magnitude_range's
+        5-8 (valid for DEMAND_SPIKE's different multiplier semantics) would
+        clamp to removing the entire pool if used here. Defaults to (0.2,
+        0.5), the value this project has always used for RESOURCE_REMOVAL
+        specifically (unrelated to DEMAND_SPIKE's own calibration history).
     duration_range  : tuple[float, float]
-        (min, max) shock duration in simulation seconds.
+        (min, max) shock duration in simulation seconds. Shared by both
+        shock types -- duration has the same units/meaning regardless of
+        shock type, unlike magnitude.
 
     Eval mode parameters
     --------------------
@@ -84,7 +104,8 @@ class ShockConfig:
     # train
     lambda_rate: float = 1 / 3600.0   # one shock per hour on average
     shock_types: list = field(default_factory=lambda: ['RESOURCE_REMOVAL', 'DEMAND_SPIKE'])
-    magnitude_range: tuple = (0.2, 0.5)
+    magnitude_range: tuple = (0.2, 0.5)   # DEMAND_SPIKE only -- see docstring
+    resource_removal_magnitude_range: tuple = (0.2, 0.5)   # RESOURCE_REMOVAL only -- see docstring
     duration_range: tuple = (1800.0, 7200.0)
 
     # eval
@@ -163,7 +184,11 @@ def shock_scheduler(env, config: ShockConfig, state: ShockState, simulation_proc
             yield env.timeout(interval)
 
             shock_type = random.choice(config.shock_types)
-            magnitude = random.uniform(*config.magnitude_range)
+            magnitude_range = (
+                config.resource_removal_magnitude_range if shock_type == 'RESOURCE_REMOVAL'
+                else config.magnitude_range
+            )
+            magnitude = random.uniform(*magnitude_range)
             duration = random.uniform(*config.duration_range)
 
             _apply_onset(env, shock_type, magnitude, config, state, simulation_process)
@@ -195,7 +220,11 @@ def fire_single_shock(env, config: ShockConfig, state: ShockState, simulation_pr
         duration = config.eval_duration
     else:
         shock_type = random.choice(config.shock_types)
-        magnitude = random.uniform(*config.magnitude_range)
+        magnitude_range = (
+            config.resource_removal_magnitude_range if shock_type == 'RESOURCE_REMOVAL'
+            else config.magnitude_range
+        )
+        magnitude = random.uniform(*magnitude_range)
         duration = random.uniform(*config.duration_range)
 
     _apply_onset(env, shock_type, magnitude, config, state, simulation_process)

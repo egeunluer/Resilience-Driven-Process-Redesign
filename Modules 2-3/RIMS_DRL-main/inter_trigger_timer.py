@@ -57,12 +57,20 @@ class InterTriggerTimer(object):
                 self._interval = stop + arrival
             else:
                 self._interval = arrival
+            # Bug fix (found building the Helpdesk bundle): this branch computed
+            # self._interval but never folded it into self._previous, which stays
+            # at its __init__ default of 0 forever -- every 'distribution'-type
+            # arrival was silently scheduled at env.now=0, flooding the event
+            # queue and starving out real assignments (next_decision_moment only
+            # drains one event per call). Scoped to this branch only -- 'custom'
+            # sets self._previous directly from a precomputed timestamp and must
+            # not have a stale self._interval folded into it.
+            self._previous += self._interval
         elif self._type == 'custom':
             #self._interval += self.custom_arrival(case, self._previous_date, name_log)
             self._previous = (self.arrivals.iloc[case][0] - self._start_time).total_seconds()
         else:
             raise ValueError('ERROR: Invalid arrival times generator')
-        #self._previous += self._interval
         #self._previous_date = self._start_time + timedelta(seconds=self._interval)
         return self._previous
 

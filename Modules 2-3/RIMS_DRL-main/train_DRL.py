@@ -19,7 +19,6 @@ from stable_baselines3.common.results_plotter import load_results, ts2xy, plot_r
 from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
 from stable_baselines3.common.logger import configure
 
-from gymnasium.wrappers import normalize
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 from callbacks import SaveOnBestTrainingRewardCallback, EvalPolicyCallback
@@ -84,18 +83,36 @@ beta = 0.5
 from shock import ShockConfig
 shock_config = ShockConfig(
     mode='train',
+    # RESOURCE_REMOVAL re-enabled: it previously shared magnitude_range with
+    # DEMAND_SPIKE below, but for RESOURCE_REMOVAL magnitude means "fraction of
+    # the pool to remove" (not a multiplier) -- drawing from DEMAND_SPIKE's 5-8
+    # range clamped every RESOURCE_REMOVAL shock to removing 100% of an
+    # activity's eligible resources, which could strand a pending token with
+    # zero eligible resources for the rest of the episode. Found via the
+    # Consulta smoke test (IndexError in gym_env.step() shortly after a
+    # RESOURCE_REMOVAL shock). Fixed at the root in shock.py: ShockConfig now
+    # has a separate resource_removal_magnitude_range field, used only for
+    # RESOURCE_REMOVAL draws; magnitude_range below is DEMAND_SPIKE-only.
     shock_types=['RESOURCE_REMOVAL', 'DEMAND_SPIKE'],
-    # magnitude_range: was (0.2, 0.5) -- a 1.2x-1.5x arrival bump, far milder than
-    # what calibration/eval actually use. Every P*/cpl_base/phi_fix calibration
-    # and resilience-metric run this project has produced (calibrate_resilience_
-    # constants.py, compute_resilience_metrics.py) uses magnitude in [5, 8] (a
-    # 6x-9x arrival multiplier -- DEMAND_SPIKE's multiplier is 1+magnitude), the
-    # validated realistic range (Training_Readiness_Implementation_Summary.md
-    # SS32). Training on (0.2, 0.5) while being evaluated against [5, 8] would
-    # mean the agent rarely, if ever, practices on a shock severe enough to need
-    # a real recovery response during training. Matched to [5, 8] here so
-    # training and eval see the same disruption regime.
+    # magnitude_range (DEMAND_SPIKE only): was (0.2, 0.5) -- a 1.2x-1.5x arrival
+    # bump, far milder than what calibration/eval actually use. Every P*/
+    # cpl_base/phi_fix calibration and resilience-metric run this project has
+    # produced (calibrate_resilience_constants.py, compute_resilience_metrics.py)
+    # uses magnitude in [5, 8] (a 6x-9x arrival multiplier -- DEMAND_SPIKE's
+    # multiplier is 1+magnitude), the validated realistic range
+    # (Training_Readiness_Implementation_Summary.md SS32). Training on (0.2, 0.5)
+    # while being evaluated against [5, 8] would mean the agent rarely, if ever,
+    # practices on a shock severe enough to need a real recovery response during
+    # training. Matched to [5, 8] here so training and eval see the same
+    # disruption regime.
     magnitude_range=(5.0, 8.0),
+    # resource_removal_magnitude_range (RESOURCE_REMOVAL only): fraction of an
+    # activity's eligible resource pool to remove, must stay within [0, 1].
+    # (0.2, 0.5) is this project's original, unchanged RESOURCE_REMOVAL range --
+    # unlike DEMAND_SPIKE, RESOURCE_REMOVAL was never recalibrated against a
+    # different eval magnitude, so there's no "match eval" argument for moving
+    # this one.
+    resource_removal_magnitude_range=(0.2, 0.5),
     # duration_range: was (1800.0, 7200.0) (30min-2h) -- calibration/eval both use
     # a fixed 21,600s (6h) shock (calibrate_resilience_constants.py,
     # compute_resilience_metrics.py). Fixed here to the same 21,600s rather than

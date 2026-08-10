@@ -1,0 +1,19 @@
+{
+  "P_star": 3816.510999999882,
+  "cpl_base": 167982158.72345918,
+  "phi_fix": 8092.109578571416,
+  "config_used": {
+    "dataset": "BPI_Challenge_2017_W_Two_TS",
+    "artifact": "../../Module 1/artifacts/bpi2017.json",
+    "pool": "../../Module 1/artifacts/bpi2017_pure_generalist_pool.json",
+    "threshold": 20,
+    "n_traces": 5789,
+    "n_traces_baseline": 2000,
+    "n_baseline_seeds": 8,
+    "policy": "least_used",
+    "shock_type": "DEMAND_SPIKE",
+    "shock_magnitude": 6.0,
+    "shock_duration": 21600.0,
+    "n_phi_fix_rollouts": 5
+  }
+}
