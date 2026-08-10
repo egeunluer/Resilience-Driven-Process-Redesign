@@ -606,6 +606,11 @@ class gym_env(Env):
             # violation signal v_k (spec), not the raw cpl_accumulated-cpl_budget diff.
             if self.reward_function == 'RF2':
                 self.lagrange_lambda = max(0.0, self.lagrange_lambda + self.eta_lambda * self.v_k)
+            # self.nr_steps is cumulative across the WHOLE training run (never reset in
+            # reset(), only initialised once in __init__) -- this is the same counter
+            # SB3 itself is counting toward time_steps (train_DRL.py's total_timesteps
+            # budget), so it directly tells you how far into training this episode is.
+            print('Total training steps so far:', self.nr_steps, flush=True)
             print('Mean cycle time:', self.mean_cycle_time, flush=True)
             print('Total reward sum final calc (normalized):', self.total_reward_end, flush=True)
             print('Total reward cumulative:', self.total_reward, flush=True)
