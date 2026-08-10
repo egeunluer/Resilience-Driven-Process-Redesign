@@ -1,0 +1,130 @@
+{
+  "P_star": 3816.510999999882,
+  "config_used": {
+    "dataset": "BPI_Challenge_2017_W_Two_TS",
+    "artifact": "../../Module 1/artifacts/bpi2017.json",
+    "pool": "../../Module 1/artifacts/bpi2017_pure_generalist_pool.json",
+    "calibration": "../../Module 1/artifacts/bpi2017_calibration.json",
+    "threshold": 20,
+    "n_traces": 5789,
+    "magnitudes": [
+      5.0,
+      6.0,
+      7.0,
+      8.0
+    ],
+    "duration": 21600.0,
+    "seeds": [
+      0,
+      1
+    ],
+    "policy": "least_used",
+    "shock_type": "DEMAND_SPIKE"
+  },
+  "results": [
+    {
+      "TTI": 7468.43541666666,
+      "MPD": 7333.019033333325,
+      "RT": 8807.771666666675,
+      "CPL": 17090990.081171874,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 5.0,
+      "seed": 0,
+      "shock_onset": 49937.0415,
+      "shock_offset": 71537.04149999999,
+      "n_completed": 85
+    },
+    {
+      "TTI": 6567.533666666648,
+      "MPD": 8433.996266666634,
+      "RT": 9560.44816666669,
+      "CPL": 31067301.61362208,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 5.0,
+      "seed": 1,
+      "shock_onset": 50541.0,
+      "shock_offset": 72141.0,
+      "n_completed": 85
+    },
+    {
+      "TTI": 6967.221714285719,
+      "MPD": 7730.307042857127,
+      "RT": 7463.901499999985,
+      "CPL": 13960519.504012095,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 6.0,
+      "seed": 0,
+      "shock_onset": 49937.0415,
+      "shock_offset": 71537.04149999999,
+      "n_completed": 85
+    },
+    {
+      "TTI": 6482.0304285714155,
+      "MPD": 9359.536985714269,
+      "RT": 8415.530571428571,
+      "CPL": 27130410.837974187,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 6.0,
+      "seed": 1,
+      "shock_onset": 50541.0,
+      "shock_offset": 72141.0,
+      "n_completed": 85
+    },
+    {
+      "TTI": 6933.3653125000055,
+      "MPD": 6841.64519999999,
+      "RT": 27935.593187500053,
+      "CPL": 53738871.59317998,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 7.0,
+      "seed": 0,
+      "shock_onset": 49937.0415,
+      "shock_offset": 71537.04149999999,
+      "n_completed": 85
+    },
+    {
+      "TTI": 6401.653499999993,
+      "MPD": 9479.496399999996,
+      "RT": 27273.200999999994,
+      "CPL": 86531815.22639821,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 7.0,
+      "seed": 1,
+      "shock_onset": 50541.0,
+      "shock_offset": 72141.0,
+      "n_completed": 85
+    },
+    {
+      "TTI": 6907.032555555561,
+      "MPD": 9282.344899999975,
+      "RT": 16714.785944444382,
+      "CPL": 50345950.51912463,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 8.0,
+      "seed": 0,
+      "shock_onset": 49937.0415,
+      "shock_offset": 71537.04149999999,
+      "n_completed": 85
+    },
+    {
+      "TTI": 5811.698999999993,
+      "MPD": 18479.920877777775,
+      "RT": 86787.301,
+      "CPL": 311800081.56249714,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 8.0,
+      "seed": 1,
+      "shock_onset": 50541.0,
+      "shock_offset": 72141.0,
+      "n_completed": 105
+    }
+  ]
+}

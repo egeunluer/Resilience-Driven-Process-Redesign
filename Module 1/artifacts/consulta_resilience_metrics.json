@@ -1,0 +1,130 @@
+{
+  "P_star": 32856.0,
+  "config_used": {
+    "dataset": "ConsultaDataMining201618",
+    "artifact": "../../Module 1/artifacts/consulta.json",
+    "pool": "../../Module 1/artifacts/consulta_generalist_pool.json",
+    "calibration": "../../Module 1/artifacts/consulta_calibration.json",
+    "threshold": 20,
+    "n_traces": 2000,
+    "magnitudes": [
+      5.0,
+      6.0,
+      7.0,
+      8.0
+    ],
+    "duration": 72000.0,
+    "seeds": [
+      0,
+      1
+    ],
+    "policy": "least_used",
+    "shock_type": "DEMAND_SPIKE"
+  },
+  "results": [
+    {
+      "TTI": 68889.41666666666,
+      "MPD": 294677.9333333333,
+      "RT": 316356.5833333334,
+      "CPL": 24821632565.46805,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 5.0,
+      "seed": 0,
+      "shock_onset": 39136.5,
+      "shock_offset": 111136.5,
+      "n_completed": 100
+    },
+    {
+      "TTI": 70560.0,
+      "MPD": 317521.6,
+      "RT": 509760.0,
+      "CPL": 40705579871.99999,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 5.0,
+      "seed": 1,
+      "shock_onset": 27787.0,
+      "shock_offset": 99787.0,
+      "n_completed": 155
+    },
+    {
+      "TTI": 68510.92857142858,
+      "MPD": 249354.42857142858,
+      "RT": 419510.5714285714,
+      "CPL": 39259837707.575485,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 6.0,
+      "seed": 0,
+      "shock_onset": 39136.5,
+      "shock_offset": 111136.5,
+      "n_completed": 125
+    },
+    {
+      "TTI": 70560.0,
+      "MPD": 320981.1142857143,
+      "RT": 612833.5,
+      "CPL": 75185344391.1571,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 6.0,
+      "seed": 1,
+      "shock_onset": 27787.0,
+      "shock_offset": 99787.0,
+      "n_completed": 175
+    },
+    {
+      "TTI": 68227.0625,
+      "MPD": 357770.9125,
+      "RT": 456998.4375,
+      "CPL": 59258098864.461716,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 7.0,
+      "seed": 0,
+      "shock_onset": 39136.5,
+      "shock_offset": 111136.5,
+      "n_completed": 135
+    },
+    {
+      "TTI": 70560.0,
+      "MPD": 400257.125,
+      "RT": 661921.0,
+      "CPL": 97685218005.0,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 7.0,
+      "seed": 1,
+      "shock_onset": 27787.0,
+      "shock_offset": 99787.0,
+      "n_completed": 190
+    },
+    {
+      "TTI": 68006.27777777778,
+      "MPD": 373988.19999999995,
+      "RT": 519181.22222222225,
+      "CPL": 68551460403.33331,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 8.0,
+      "seed": 0,
+      "shock_onset": 39136.5,
+      "shock_offset": 111136.5,
+      "n_completed": 145
+    },
+    {
+      "TTI": 70560.0,
+      "MPD": 301180.0,
+      "RT": 720000.0,
+      "CPL": 112211783696.0,
+      "breached": true,
+      "recovered": true,
+      "magnitude": 8.0,
+      "seed": 1,
+      "shock_onset": 27787.0,
+      "shock_offset": 99787.0,
+      "n_completed": 205
+    }
+  ]
+}

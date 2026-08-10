@@ -1,6 +1,6 @@
 # RIMS_DRL Modification Record
 
-This document records every change made to the `RIMS_DRL-main` codebase, in execution order. All 55 steps are complete (Phases 17 and 20 list validated-but-not-yet-integrated work — see those sections; Phase 21 is where that methodology finally gets wired into production code for real). Consulta and BPI2017 are calibration-complete, training-ready, and have passed an end-to-end training smoke test with both shock types active as of Step 55. Helpdesk has a validated, citation-backed duration calibration and a corrected `P*` (Steps 47-50) but is not yet training-ready — its shock calibration remains open (see `Training_Readiness_Implementation_Summary.md` §45). Each entry names the file, what was changed, and why.
+This document records every change made to the `RIMS_DRL-main` codebase, in execution order. All 59 steps are complete (Phases 17 and 20 list validated-but-not-yet-integrated work — see those sections; Phase 21 is where that methodology finally gets wired into production code for real). Consulta and BPI2017 are calibration-complete, training-ready, and have passed an end-to-end training smoke test with both shock types active as of Step 55; `phi(t)` was subsequently redefined as a non-overlapping tumbling-batch mean (Steps 56-57) and both datasets recalibrated and re-validated against it (Steps 58-59), with resilience-metrics results now showing dramatically tighter seed variance and clear, dataset-specific dose-response patterns. Helpdesk has a validated, citation-backed duration calibration and a corrected `P*` (Steps 47-50) but is not yet training-ready — its shock calibration remains open (see `Training_Readiness_Implementation_Summary.md` §45). Each entry names the file, what was changed, and why.
 
 ---
 
@@ -1201,6 +1201,118 @@ e.g. 0.211, 0.255, 0.339, 0.499 — no more 100%-of-pool clamping). One full PPO
 update completed, `model_final.zip` saved. `RESOURCE_REMOVAL` is confirmed working correctly in
 training, not just no-longer-crashing.
 
+### Step 56 — `gym_env.py`: `phi(t)` redefined as a non-overlapping ("tumbling") batch mean, replacing the rolling window
+
+**Why:** Walking the user through a pasted training-log episode surfaced a real design flaw:
+`phi(t)` was a *rolling* mean over the last `ppi_window_n=20` completed traces (a `deque(maxlen=20)`).
+Each new completion evicted only the single oldest trace from that window — so immediately after a
+shock fires, the window is still ~80-95% pre-shock data, and stays that way until enough new
+completions have rolled through to flush the old ones out one at a time. The user's diagnosis:
+"having 16 old traces in the calculation does not make sense at all — of course we would not see
+the effect of the shock," with the fix specified directly: compute the mean of the last 5 completed
+traces, recomputed once per 5 new completions, with no two consecutive means sharing a trace.
+
+**Done:** `ppi_window_n`'s semantics changed from "rolling window size" to "non-overlapping batch
+size." New state: `self._phi_batch_buffer` (accumulates new completions not yet forming a full
+batch), `self._current_phi` (the last fully-resolved batch's mean, held constant/piecewise-
+step-function between resolutions), `self._phi_batches_completed` (count of batches resolved this
+episode). The "Gather rewards" loop (where individual trace completions are processed one at a
+time) appends each new cycle time to the buffer and, once it reaches `ppi_window_n`, computes the
+mean, resets the buffer to empty, and increments the batch counter — no completion is ever counted
+in two different `phi(t)` values. `_current_ppi()` now just returns `self._current_phi`.
+`_warm_up()`'s stopping condition changed from "rolling window full" to "at least one batch has
+resolved" (`self._phi_batches_completed < 1`). Added a new `ppi_window_n_override` constructor
+parameter (mirroring the existing `p_star_override` pattern) so callers can use a smaller batch
+(5) than whatever is on the artifact (every artifact currently says 20, inherited from the old
+design) without editing the artifact file. Removed the now-dead `from collections import deque`
+import.
+
+Critically, at the warm-up→shock transition (where `total_reward`/`reward_count` were already
+being zeroed so post-shock bookkeeping doesn't include warm-up), `self._phi_batch_buffer` is now
+*also* cleared — any pre-shock completions not yet forming a full batch are discarded, so the
+first post-shock `phi(t)` reading is built entirely from post-shock completions, never diluted by
+leftover pre-shock data. `self._current_phi` itself is deliberately left untouched at this
+boundary — the warm-up-established baseline is exactly what should be reported as the "before"
+reference at shock onset.
+
+### Step 57 — `gym_env.py`: recovery condition fixed to require a genuinely fresh post-shock reading
+
+**Why:** Found while empirically testing Step 56, not before: with a smaller batch (5), it became
+common for the shock's own duration to elapse *before* even one post-shock batch of 5 completions
+resolved. The old recovery check (`shock ended AND phi(t) <= P*`) would then declare "recovered"
+using whatever `phi(t)` last happened to read — which, in that situation, is still the stale
+pre-shock baseline, not a genuine post-shock measurement. This would have quietly defeated the
+entire point of Step 56: a "recovered" episode that never actually re-measured anything after the
+shock.
+
+**Done:** Added `self._phi_batches_completed_at_shock_onset`, snapshotted the moment the shock
+fires. The recovery condition now additionally requires
+`self._phi_batches_completed > self._phi_batches_completed_at_shock_onset` — i.e. at least one
+new batch must have resolved since the shock fired — before `phi(t) <= P*` is even consulted.
+Consistent with the project's existing "no backstop" philosophy (Step 41): if a fresh reading
+takes a long time to materialise, the episode just keeps running until it does, same as it always
+has for genuine recovery.
+
+**Verified:** instrumented 4 seeded runs pre-fix (all showed `recovered=True` using a stale
+pre-shock `phi(t)` value, 0 post-shock batches resolved) and the same 4 seeds post-fix (all now
+require `batches_since_shock_onset=1` before recovering, with `phi(t)` values genuinely computed
+from fresh post-shock data, e.g. 16,436 / 23,356 / 17,025 / 18,118 vs. `P*`=32,856).
+
+### Step 58 — `calibrate_resilience_constants.py`, `compute_resilience_metrics.py`, `train_DRL.py`: `ppi_window_n` threaded through consistently
+
+**Why:** `P*`/`cpl_base`/`phi_fix` are only meaningful relative to whatever `phi(t)` definition
+computed them. Changing `phi(t)`'s batch size without also making every downstream script use the
+*same* size would silently recreate an inconsistency identical in spirit to the ones already fixed
+this project (mismatched pools, mismatched shock regimes, etc.).
+
+**Done:** `calibrate_resilience_constants.py` gained `--ppi-window-n` (default `5`), threaded into
+`build_env()`'s `gym_env` construction and recorded in `config_used.ppi_window_n`.
+`compute_resilience_metrics.py` reads `ppi_window_n` back out of the loaded `--calibration` file
+(same pattern already used for `P_star`) rather than defaulting independently — falls back to 20
+with a loud warning if an older calibration file (pre-dating this redesign) doesn't have the field
+recorded. `train_DRL.py` does the same: reads `ppi_window_n` from the calibration file and passes
+it to both `env_simulator` and `eval_env` construction via `ppi_window_n_override`, with the same
+loud-warning fallback for old files.
+
+**Verified:** Consulta and BPI2017 both recalibrated (Step 59) and both new calibration files show
+`"ppi_window_n": 5` recorded in `config_used`, confirming the value round-trips correctly from the
+calibration script through to the file used by both `compute_resilience_metrics.py` and (once
+training resumes) `train_DRL.py`.
+
+### Step 59 — Consulta and BPI2017 recalibrated and re-validated under the new `phi(t)` definition
+
+**Why:** Steps 56-58 changed what `phi(t)` means; the existing `consulta_calibration.json` and
+`bpi2017_calibration.json` (and the resilience-metrics results computed from them) were stale,
+calibrated against the old rolling-window metric.
+
+**Done:** Re-ran `calibrate_resilience_constants.py` for both, using the exact same validated
+shock parameters as before (unchanged — magnitude=6, Consulta duration=72,000s/20h, BPI2017
+duration=21,600s/6h; only `--ppi-window-n 5`, new since Step 58's default, was added) and
+`compute_resilience_metrics.py` for both (same magnitude grid `5,6,7,8`, seeds `0,1`, same
+durations as calibration).
+
+**Results — both `cpl_base` values remain large and non-zero, confirming the shock still has a
+real effect under the new metric:**
+
+| | Consulta (old → new) | BPI2017 (old → new) |
+|---|---|---|
+| `P_star` | 32,856.0 → 32,856.0 (unchanged) | 3,816.51 → 3,816.51 (unchanged) |
+| `cpl_base` | 33,710,522,992.9 → **53,218,071,893.7** (+58%) | 167,982,158.7 → **131,704,591.7** (−22%) |
+| `phi_fix` | 236,243.6 → 242,446.96 (~unchanged) | 8,092.11 → **11,538.07** (+43%) |
+
+Resilience-metrics runs (magnitude 5-8 × 2 seeds each) show a dramatic improvement over the old
+metric's results in both datasets: seed-to-seed spread at the same magnitude drops from the old
+~65x (BPI2017, magnitude=6, old metric) to **1.4-1.9x** across most of the grid for both datasets
+— the old spread was metric-noise, not genuine variance. Consulta shows a clean, monotonically
+increasing CPL/RT with magnitude in both seeds independently. BPI2017 shows a real, reproducible
+threshold effect between magnitude 6 and 7 (RT roughly triples in *both* seeds independently:
+2.07h→7.76h and 2.34h→7.58h), with wider seed divergence specifically at the highest tested
+magnitude (8) — plausibly a genuine effect of which resources get hit at the most extreme shock
+tested, not pure noise, given how tight the spread is at every other magnitude. Full results
+written to `Module 1/artifacts/consulta_resilience_metrics.json` and
+`Module 1/artifacts/bpi2017_resilience_metrics.json`. See
+`Training_Readiness_Implementation_Summary.md` §50-52 for the full narrative and tables.
+
 ---
 
 ## Execution order summary
@@ -1260,6 +1372,10 @@ training, not just no-longer-crashing.
 | 53 | `train_DRL.py` | Removed dead `from gymnasium.wrappers import normalize` import — incompatible with installed gymnasium 1.2.3, crashed training on startup |
 | 54 | `train_DRL.py` | Train-time `shock_types` restricted to `['DEMAND_SPIKE']` only (interim) — `RESOURCE_REMOVAL` shares a magnitude range meant for `DEMAND_SPIKE`'s multiplier semantics, causing 100%-of-pool removal and a stranded-token crash |
 | 55 | `shock.py`, `train_DRL.py` | Real fix superseding Step 54: new `resource_removal_magnitude_range` field on `ShockConfig` (default `(0.2, 0.5)`), used only for `RESOURCE_REMOVAL` draws; `RESOURCE_REMOVAL` re-enabled in `train_DRL.py` |
+| 56 | `gym_env.py` | `phi(t)` redefined: non-overlapping tumbling-batch mean (default batch size 5) replacing the old rolling-window-of-20 mean; buffer cleared at the warm-up→shock boundary so the first post-shock reading is never diluted by pre-shock data |
+| 57 | `gym_env.py` | Recovery condition fixed: now requires a genuinely new post-shock `phi(t)` batch to have resolved, not just "shock's over and the last-known (possibly stale) reading is <= P\*" |
+| 58 | `calibrate_resilience_constants.py`, `compute_resilience_metrics.py`, `train_DRL.py` | `ppi_window_n` (tumbling-batch size) threaded consistently through calibration, resilience-metrics, and training — read back from the calibration file everywhere, never re-defaulted independently |
+| 59 | (no code change — recalibration run) | Consulta and BPI2017 recalibrated and re-validated (resilience-metrics grid) against the new `phi(t)` definition |
 
 **Milestones:**
 - Steps 1–4: code runs without TensorFlow/Prophet
@@ -1291,3 +1407,6 @@ training, not just no-longer-crashing.
 - Step 50: Helpdesk's duration-estimation problem resolved via a citation-backed single global scale-factor calibration (median fit +14.8%, mean held-out +8.2%, p95 held-out +36.8% — documented limitation) rather than continuing to chase a better per-event heuristic.
 - Steps 51-52: `calibrate_resilience_constants.py` generalized (`--p-star-formula`, optional `--pool`) to support PurchasingExample's different resource/distribution characteristics without touching any already-validated dataset's behaviour.
 - Steps 53-55: first end-to-end training smoke test run (Consulta) — found and fixed a dead-import crash (Step 53) and a `RESOURCE_REMOVAL` magnitude-range bug, first via an interim `DEMAND_SPIKE`-only restriction (Step 54) then a real fix giving `RESOURCE_REMOVAL` its own correctly-scaled range (Step 55). Both shock types now verified working together in training (213 shocks fired cleanly, all `RESOURCE_REMOVAL` magnitudes correctly bounded). See `Training_Readiness_Implementation_Summary.md` §48-49 for the full narrative, and §45/§47 for Helpdesk's and PurchasingExample's current (not-yet-training-ready) status.
+- Steps 56-57: `phi(t)` redefined from a rolling window to a non-overlapping tumbling-batch mean (default size 5), after the user identified that the old design left a shock's aftermath diluted by up to 95% pre-shock data for a long stretch after onset. Testing this surfaced a second, related bug — recovery could be declared using a stale pre-shock reading if the shock ended before a single post-shock batch resolved — fixed in the same pass by requiring a genuinely fresh post-shock batch before recovery can trigger.
+- Step 58: the new `ppi_window_n` threaded consistently through calibration, resilience-metrics, and training scripts — same discipline already applied to `P*`/`cpl_base`/`phi_fix`/pool consistency.
+- Step 59: Consulta and BPI2017 recalibrated and re-validated against the new `phi(t)`. Both `cpl_base` values remain large and non-zero (Consulta +58%, BPI2017 -22% vs. the old metric). Resilience-metrics results improved dramatically: seed-to-seed spread dropped from ~65x (old metric, BPI2017) to 1.4-1.9x across most of the magnitude grid for both datasets. Consulta shows a clean monotonic dose-response with magnitude; BPI2017 shows a real, reproducible threshold effect between magnitude 6 and 7 (RT roughly triples in both seeds independently). See `Training_Readiness_Implementation_Summary.md` §50-52 for the full narrative and tables.

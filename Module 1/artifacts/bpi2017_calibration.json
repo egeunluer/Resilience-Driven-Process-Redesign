@@ -1,7 +1,7 @@
 {
   "P_star": 3816.510999999882,
-  "cpl_base": 167982158.72345918,
-  "phi_fix": 8092.109578571416,
+  "cpl_base": 131704591.67437366,
+  "phi_fix": 11538.065028571391,
   "config_used": {
     "dataset": "BPI_Challenge_2017_W_Two_TS",
     "artifact": "../../Module 1/artifacts/bpi2017.json",
@@ -10,6 +10,8 @@
     "n_traces": 5789,
     "n_traces_baseline": 2000,
     "n_baseline_seeds": 8,
+    "ppi_window_n": 5,
+    "p_star_formula": "median",
     "policy": "least_used",
     "shock_type": "DEMAND_SPIKE",
     "shock_magnitude": 6.0,

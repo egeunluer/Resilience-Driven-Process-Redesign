@@ -183,9 +183,27 @@ if __name__ == '__main__':
         p_star_override = calibration['P_star']
         cpl_budget = p_cpl_fraction * calibration['cpl_base']   # CPL_max = p * CPL_base
         phi_fix = calibration['phi_fix']
+        # D9 (revised): phi(t)'s tumbling-batch size must match what P*/cpl_base/
+        # phi_fix above were calibrated under -- read it from the same file rather
+        # than letting this script default independently. See gym_env.py's
+        # ppi_window_n comment. Older calibration files (pre-dating the rolling-
+        # window -> tumbling-batch redesign) won't have this field; fall back to
+        # 20 (the old rolling-window size) with a loud warning, since the loaded
+        # P*/cpl_base/phi_fix are stale under the new definition in that case.
+        ppi_window_n_override = cfg.get('ppi_window_n')
+        if ppi_window_n_override is None:
+            ppi_window_n_override = 20
+            print(f"WARNING: {calibration_path} has no ppi_window_n recorded (pre-dates the "
+                  f"tumbling-batch phi(t) redesign) -- falling back to 20. The loaded P*/"
+                  f"cpl_base/phi_fix were calibrated under the OLD rolling-window phi(t); "
+                  f"re-run calibrate_resilience_constants.py for a consistent result.",
+                  flush=True)
         print(f"Loaded calibration from {calibration_path}: "
               f"P_star={p_star_override:.4f} cpl_base={calibration['cpl_base']:.4f} "
-              f"cpl_budget(p={p_cpl_fraction})={cpl_budget:.4f} phi_fix={phi_fix:.4f}", flush=True)
+              f"cpl_budget(p={p_cpl_fraction})={cpl_budget:.4f} phi_fix={phi_fix:.4f} "
+              f"ppi_window_n={ppi_window_n_override}", flush=True)
+    else:
+        ppi_window_n_override = None
 
     # Create and wrap the environment. pool_override_path/p_star_override keep
     # training on the exact same curated pool and fixed P* the calibration file
@@ -202,6 +220,7 @@ if __name__ == '__main__':
         beta=beta,
         pool_override_path=pool_override_path,
         p_star_override=p_star_override,
+        ppi_window_n_override=ppi_window_n_override,
     )
     env = Monitor(env_simulator, log_dir)
 
@@ -227,6 +246,7 @@ if __name__ == '__main__':
         beta=beta,
         pool_override_path=pool_override_path,
         p_star_override=p_star_override,
+        ppi_window_n_override=ppi_window_n_override,
     )
     eval_env = Monitor(eval_env, log_dir)
     nr_evaluations = 10 if NAME_LOG != 'BPI_Challenge_2017_W_Two_TS' else 3

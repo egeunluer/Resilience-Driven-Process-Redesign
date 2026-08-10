@@ -21,7 +21,6 @@ import math
 import pm4py
 from os.path import exists
 from datetime import datetime, timedelta
-from collections import deque
 import random
 CYCLE_TIME_MAX = 8.64e+6
 
@@ -38,7 +37,7 @@ if __name__ == "__main__":
 
 
 class gym_env(Env):
-    def __init__(self, NAME_LOG, N_TRACES, CALENDAR, POLICY=None, N_SIMULATION=0, threshold=0, postpone=True, reward_function='inverse_CT', artifact_path=None, shock_config=None, cpl_budget=0.0, eta_lambda=0.01, phi_fix=None, beta=0.5, pool_override_path=None, p_star_override=None) -> None:
+    def __init__(self, NAME_LOG, N_TRACES, CALENDAR, POLICY=None, N_SIMULATION=0, threshold=0, postpone=True, reward_function='inverse_CT', artifact_path=None, shock_config=None, cpl_budget=0.0, eta_lambda=0.01, phi_fix=None, beta=0.5, pool_override_path=None, p_star_override=None, ppi_window_n_override=None) -> None:
         self.name_log = NAME_LOG
 
         self.CALENDAR = CALENDAR ## "True" If you want to use calendar, "False" otherwise
@@ -89,7 +88,18 @@ class gym_env(Env):
         # simulator-native value) when given.
         self.P_star = p_star_override if p_star_override is not None else artifact.get('P_star')
         self.normalization_cycle_time = artifact.get('normalization_cycle_time', self.normalization_cycle_time)
-        self.ppi_window_n = artifact.get('ppi_window_n', 20)
+        # D9 (revised): ppi_window_n is now the size of a non-overlapping ("tumbling")
+        # batch, not a rolling/sliding window. phi(t) is recomputed only once every
+        # ppi_window_n NEW trace completions, as the mean of exactly that batch -- no
+        # completion is ever counted in two different phi(t) values. This replaced an
+        # earlier rolling-mean-of-last-20 design, which stayed ~80% pre-shock data for
+        # a long stretch after a shock fired (each new completion only evicted the
+        # single oldest one from a 20-slot window), diluting the shock's visibility in
+        # phi(t) for many steps. ppi_window_n_override lets callers use a smaller batch
+        # (e.g. 5) than whatever value is on the artifact (every artifact currently
+        # says 20, inherited from the old rolling-window design) without editing the
+        # artifact file itself -- same override pattern as p_star_override above.
+        self.ppi_window_n = ppi_window_n_override if ppi_window_n_override is not None else artifact.get('ppi_window_n', 20)
 
         self.shock_config = shock_config  # D5: ShockConfig instance or None
         # D-single-shock: single-shock-per-episode bookkeeping (only used when
@@ -236,11 +246,11 @@ class gym_env(Env):
         return counts
 
     def _current_ppi(self):
-        """D9: phi(t) — rolling mean cycle time of the last `ppi_window_n` completed
-        traces. Returns 0.0 before any trace has completed this episode."""
-        if len(self.ppi_history) == 0:
-            return 0.0
-        return float(np.mean(self.ppi_history))
+        """D9: phi(t) — mean cycle time of the most recently completed, non-overlapping
+        batch of `ppi_window_n` traces (a tumbling window: batches never share a trace).
+        Piecewise-constant — holds its value between batch completions, only updating
+        once every `ppi_window_n` new completions. 0.0 before the first batch completes."""
+        return self._current_phi
 
     def _canonical_activity(self, activity):
         """D-merge-fix: translate a native Petri-net activity label to Module
@@ -284,8 +294,16 @@ class gym_env(Env):
         self.prev_env_time = 0.0
         self.u_k = 0.0
         self.v_k = 0.0
-        # D9: rolling PPI phi(t) tracking — reset each episode (fresh case population).
-        self.ppi_history = deque(maxlen=self.ppi_window_n)
+        # D9: tumbling-batch PPI phi(t) tracking — reset each episode (fresh case
+        # population). _phi_batch_buffer accumulates new completions not yet forming a
+        # full batch; _current_phi is the last fully-resolved batch's mean (held
+        # constant until the next batch completes); _phi_batches_completed counts how
+        # many batches have resolved so far this episode (used by _warm_up() to know
+        # when a real baseline exists).
+        self._phi_batch_buffer = []
+        self._current_phi = 0.0
+        self._phi_batches_completed = 0
+        self._phi_batches_completed_at_shock_onset = 0
         self.prev_ppi = 0.0
         self.env = simpy.Environment()
         self.simulation_process = SimulationProcess(self.env, self.params, self.CALENDAR)
@@ -372,6 +390,12 @@ class gym_env(Env):
                 self.shock_fired = (shock_type, magnitude, duration)
                 self.shock_onset_time = float(self.env.now)
                 self.shock_offset_time = self.shock_onset_time + duration
+                # D9: snapshot how many phi(t) batches existed at shock onset, so
+                # "recovered" (below) can require a genuinely NEW post-shock batch,
+                # not just "shock's over and whatever phi(t) last happened to read
+                # (possibly still the pre-shock baseline, if no batch has resolved
+                # since) is <= P_star".
+                self._phi_batches_completed_at_shock_onset = self._phi_batches_completed
                 print(
                     f'Shock fired at t={self.shock_onset_time:.1f} after {warmup_steps} warm-up steps: '
                     f'type={shock_type} magnitude={magnitude:.3f} duration={duration:.1f} '
@@ -383,11 +407,19 @@ class gym_env(Env):
                     f'stabilised — no shock fired this episode. Increase N_TRACES.', flush=True,
                 )
             # Zero episode-scoped bookkeeping so it reflects the shock episode
-            # (onset onward), not the hidden warm-up. ppi_history/prev_ppi are
+            # (onset onward), not the hidden warm-up. _current_phi/prev_ppi are
             # deliberately left untouched — the warm-up-established phi(t)
-            # baseline is exactly what should carry forward.
+            # baseline (the last fully-resolved pre-shock batch) is exactly what
+            # should be reported as the "before" reference at shock onset.
+            # _phi_batch_buffer IS cleared here, though: any pre-shock completions
+            # not yet forming a full batch must not leak into the first post-shock
+            # batch — otherwise phi(t)'s first post-shock reading would still be
+            # partly pre-shock data, exactly the dilution this design exists to
+            # avoid. This guarantees the first batch phi(t) resolves to, after the
+            # shock fires, is built entirely from post-shock completions.
             self.total_reward = 0
             self.reward_count = 0
+            self._phi_batch_buffer = []
             self.cpl_accumulated = 0.0
             self.prev_env_time = float(self.env.now)
             self.u_k = 0.0
@@ -398,16 +430,16 @@ class gym_env(Env):
     def _warm_up(self):
         """
         D-single-shock: run a hidden, FIFO-driven warm-up before the agent's
-        first decision, until phi(t) is backed by a full rolling window
-        (ppi_window_n completed traces) — i.e. until phi(t) is a meaningful
-        baseline rather than 0.0 or a handful of samples. Not exposed to the
-        agent: reuses step() for the assignment/advance/reward machinery, but
-        every reward/CPL side effect it produces is discarded and re-zeroed by
-        the caller (reset()) immediately after this returns.
+        first decision, until phi(t)'s first batch has resolved (ppi_window_n
+        completed traces) — i.e. until phi(t) is a real baseline value rather
+        than 0.0. Not exposed to the agent: reuses step() for the
+        assignment/advance/reward machinery, but every reward/CPL side effect
+        it produces is discarded and re-zeroed by the caller (reset())
+        immediately after this returns.
         """
         max_warmup_steps = 20000
         steps = 0
-        while len(self.ppi_history) < self.ppi_window_n and steps < max_warmup_steps:
+        while self._phi_batches_completed < 1 and steps < max_warmup_steps:
             mask = self.action_masks()
             valid = [i for i, m in enumerate(mask) if m]
             if not valid:
@@ -478,9 +510,18 @@ class gym_env(Env):
         for trace_id, cycle_time in self.simulation_process.traces['ended']:
             if trace_id not in self.completed_traces:
                 self.completed_traces.append(trace_id)
-                # D9: feed the rolling PPI phi(t) — shared by RF1 and RF2 — regardless
-                # of which reward function is active (cheap, and keeps it available).
-                self.ppi_history.append(cycle_time)
+                # D9: feed the tumbling-batch PPI phi(t) — shared by RF1 and RF2,
+                # regardless of which reward function is active. One trace completion
+                # is appended per iteration of this loop (never more than one at a
+                # time), so checking "did this just complete a batch" with a plain
+                # `if` right after each append is sufficient — the buffer can only
+                # grow by exactly 1 between checks, so it can never overshoot
+                # ppi_window_n before being caught and reset here.
+                self._phi_batch_buffer.append(cycle_time)
+                if len(self._phi_batch_buffer) >= self.ppi_window_n:
+                    self._current_phi = float(np.mean(self._phi_batch_buffer))
+                    self._phi_batch_buffer = []
+                    self._phi_batches_completed += 1
                 if self.reward_function == 'negative_CT':
                     reward -= cycle_time/self.normalization_cycle_time
                 elif self.reward_function in ('inverse_CT', 'RF2'):
@@ -527,11 +568,17 @@ class gym_env(Env):
         # runs (shock_config=None) and the hidden warm-up loop itself are unaffected,
         # since shock_fired stays None for them. "Recovered" = the shock has ended
         # (shock_state.is_active just became False, i.e. the offset event already
-        # fired) AND phi(t) has dropped back to/below P*.
+        # fired) AND at least one phi(t) batch has resolved SINCE the shock fired
+        # (not just "shock's over and whatever phi(t) last happened to read is
+        # <= P_star" -- with a small batch size, the shock's own duration can
+        # easily elapse before a single post-shock batch completes, which would
+        # otherwise let a stale PRE-shock reading trigger a false "recovered")
+        # AND phi(t) has dropped back to/below P*.
         recovered = (
             self.shock_fired is not None
             and self.P_star is not None
             and not self.simulation_process.shock_state.is_active
+            and self._phi_batches_completed > self._phi_batches_completed_at_shock_onset
             and self._current_ppi() <= self.P_star
         )
         # No recovery backstop: an episode runs until phi(t) genuinely drops back
