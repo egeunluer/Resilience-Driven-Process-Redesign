@@ -103,6 +103,9 @@ def main():
     parser.add_argument('--artifact', required=True)
     parser.add_argument('--pool', required=True)
     parser.add_argument('--calibration', required=True, help="Output of calibrate_resilience_constants.py")
+    parser.add_argument('--calendar', action='store_true',
+                         help="Must match the --calendar setting the calibration file was produced "
+                              "with (calibrate_resilience_constants.py's config_used.calendar).")
     parser.add_argument('--threshold', type=int, default=20)
     parser.add_argument('--n-traces', type=int, required=True,
                          help="Ceiling only -- shocked episodes terminate on recovery well before this")
@@ -119,6 +122,16 @@ def main():
         raise ValueError(f"Calibration file computed for dataset '{cfg.get('dataset')}', not '{args.dataset}'.")
     if cfg.get('pool') != args.pool:
         raise ValueError(f"Calibration file computed for pool '{cfg.get('pool')}', not '{args.pool}'.")
+    # calendar: see train_DRL.py's identical check -- P_star/cpl_base/phi_fix are
+    # only valid reference points for the resource-availability regime (always-on
+    # vs. business-hours calendars) they were calibrated under. Calibration files
+    # predating this field were all computed with CALENDAR=False, hence the
+    # default-to-False fallback rather than skipping the check.
+    if cfg.get('calendar', False) != args.calendar:
+        raise ValueError(
+            f"Calibration file was computed with calendar={cfg.get('calendar', False)}, not "
+            f"calendar={args.calendar}. Refusing to reuse a mismatched calibration."
+        )
     p_star = calibration['P_star']
     print(f"Using P_star={p_star:.1f}s from {args.calibration}", flush=True)
     # D9 (revised): phi(t)'s tumbling-batch size must match whatever calibrate_
@@ -148,7 +161,7 @@ def main():
         )
         for seed in seeds:
             print(f"=== magnitude={magnitude} seed={seed} ===", flush=True)
-            env = build_env(args, reward_function='RF2', shock_config=shock_config, p_star_override=p_star)
+            env = build_env(args, reward_function='RF1', shock_config=shock_config, p_star_override=p_star)
             trajectory, onset, offset = run_episode_logged(env, seed, least_used_action)
             metrics = compute_metrics(trajectory, onset, p_star)
             metrics.update(magnitude=magnitude, seed=seed, shock_onset=onset, shock_offset=offset,
@@ -161,7 +174,7 @@ def main():
         "P_star": p_star,
         "config_used": {
             "dataset": args.dataset, "artifact": args.artifact, "pool": args.pool,
-            "calibration": args.calibration, "threshold": args.threshold,
+            "calibration": args.calibration, "calendar": args.calendar, "threshold": args.threshold,
             "n_traces": args.n_traces, "magnitudes": magnitudes, "duration": args.duration,
             "seeds": seeds, "policy": "least_used", "shock_type": "DEMAND_SPIKE",
         },

@@ -67,6 +67,15 @@ class ShockConfig:
         (min, max) shock duration in simulation seconds. Shared by both
         shock types -- duration has the same units/meaning regardless of
         shock type, unlike magnitude.
+    cycle_schedule  : list[tuple[str, float]]
+        Optional ordered list of (shock_type, magnitude) pairs. If non-empty,
+        fire_single_shock walks it in order -- one entry per episode, wrapping
+        back to the start after the last -- instead of sampling shock_types/
+        magnitude_range/resource_removal_magnitude_range at random (those are
+        then ignored). Duration is still drawn from duration_range. The
+        position in the cycle is NOT stored here: this config object is shared
+        by the training and eval envs, so each gym_env keeps its own cursor
+        and passes it in as cycle_index.
 
     Eval mode parameters
     --------------------
@@ -107,6 +116,7 @@ class ShockConfig:
     magnitude_range: tuple = (0.2, 0.5)   # DEMAND_SPIKE only -- see docstring
     resource_removal_magnitude_range: tuple = (0.2, 0.5)   # RESOURCE_REMOVAL only -- see docstring
     duration_range: tuple = (1800.0, 7200.0)
+    cycle_schedule: list = field(default_factory=list)   # ordered (type, magnitude) cycle -- see docstring
 
     # eval
     eval_onset_time: float = 3600.0
@@ -118,6 +128,26 @@ class ShockConfig:
     # shared
     resource_groups: dict = field(default_factory=dict)
     resource_removal_scope: str = 'activity'
+
+    def __post_init__(self):
+        # Same failure mode resource_removal_magnitude_range exists to prevent:
+        # a RESOURCE_REMOVAL magnitude outside [0, 1] silently clamps to
+        # removing an activity's whole eligible pool.
+        for shock_type, magnitude in self.cycle_schedule:
+            if shock_type not in ('RESOURCE_REMOVAL', 'DEMAND_SPIKE'):
+                raise ValueError(f"cycle_schedule: unknown shock type '{shock_type}'")
+            if shock_type == 'RESOURCE_REMOVAL' and not 0.0 <= magnitude <= 1.0:
+                raise ValueError(
+                    f"cycle_schedule: RESOURCE_REMOVAL magnitude {magnitude} is a fraction "
+                    f"of the eligible pool and must lie in [0, 1]"
+                )
+
+
+def shock_key(shock_type: str, magnitude: float) -> str:
+    """Canonical key for one shock configuration e_j, e.g. 'DEMAND_SPIKE:2' or
+    'RESOURCE_REMOVAL:0.2' -- shared by calibrate_resilience_constants.py (which
+    writes the per-shock CPL_base table) and gym_env.py (which looks it up)."""
+    return f"{shock_type}:{float(magnitude):g}"
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +226,8 @@ def shock_scheduler(env, config: ShockConfig, state: ShockState, simulation_proc
             _apply_offset(shock_type, state, simulation_process)
 
 
-def fire_single_shock(env, config: ShockConfig, state: ShockState, simulation_process):
+def fire_single_shock(env, config: ShockConfig, state: ShockState, simulation_process,
+                      cycle_index: Optional[int] = None):
     """
     Fire exactly one shock, immediately (no inter-shock interval draw, no
     recurrence) — used by gym_env.reset() for the single-shock-per-episode
@@ -210,7 +241,9 @@ def fire_single_shock(env, config: ShockConfig, state: ShockState, simulation_pr
     fields (reproducible, controlled shock) rather than random sampling — the
     onset *timing* is still decided by the caller (gym_env's warm-up
     criterion), only type/magnitude/duration are fixed. In 'train' mode,
-    samples the same way shock_scheduler's train branch already does.
+    takes entry cycle_index (mod its length) of config.cycle_schedule if one
+    is set, otherwise samples the same way shock_scheduler's train branch
+    already does.
 
     Returns (shock_type, magnitude, duration) for logging/diagnostics.
     """
@@ -218,6 +251,11 @@ def fire_single_shock(env, config: ShockConfig, state: ShockState, simulation_pr
         shock_type = config.eval_shock_type
         magnitude = config.eval_magnitude
         duration = config.eval_duration
+    elif config.cycle_schedule:
+        if cycle_index is None:
+            raise ValueError("config.cycle_schedule is set but no cycle_index was given")
+        shock_type, magnitude = config.cycle_schedule[cycle_index % len(config.cycle_schedule)]
+        duration = random.uniform(*config.duration_range)
     else:
         shock_type = random.choice(config.shock_types)
         magnitude_range = (

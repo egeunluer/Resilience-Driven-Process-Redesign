@@ -14,7 +14,7 @@ import sys, getopt
 from utility import *
 import pm4py
 from inter_trigger_timer import InterTriggerTimer
-from shock import fire_single_shock
+from shock import fire_single_shock, shock_key
 import warnings
 import json
 import math
@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
 
 class gym_env(Env):
-    def __init__(self, NAME_LOG, N_TRACES, CALENDAR, POLICY=None, N_SIMULATION=0, threshold=0, postpone=True, reward_function='inverse_CT', artifact_path=None, shock_config=None, cpl_budget=0.0, eta_lambda=0.01, phi_fix=None, beta=0.5, pool_override_path=None, p_star_override=None, ppi_window_n_override=None) -> None:
+    def __init__(self, NAME_LOG, N_TRACES, CALENDAR, POLICY=None, N_SIMULATION=0, threshold=0, postpone=True, reward_function='inverse_CT', artifact_path=None, shock_config=None, cpl_base_table=None, rf2_epsilon=0.5, cpl_max_fraction=None, phi_fix=None, beta=0.5, pool_override_path=None, p_star_override=None, ppi_window_n_override=None) -> None:
         self.name_log = NAME_LOG
 
         self.CALENDAR = CALENDAR ## "True" If you want to use calendar, "False" otherwise
@@ -113,10 +113,27 @@ class gym_env(Env):
         self.shock_fired = None
         self.shock_onset_time = None
         self.shock_offset_time = None
-        # D6 (RF2): constrained-MDP parameters.
-        self.cpl_budget = cpl_budget       # CPL_max = p * CPL_base (p applied by the caller)
-        self.eta_lambda = eta_lambda       # Lagrange multiplier step size
-        self.lagrange_lambda = 0.0         # lambda_k — persists across episodes, updated at episode end
+        # Position in shock_config.cycle_schedule (if set): persists across
+        # reset(), advanced once per shock actually fired. Kept per-env, not on
+        # the shared ShockConfig, so eval episodes don't advance training's cycle.
+        self.shock_cycle_index = 0
+        # RF2 (revised, RF2_reward_function.md): signed performance area around P*,
+        #   r_k = (-D_k + epsilon * H_k) / CPL_base[e_j]
+        # D_k / H_k = exact area of d(t) = max(0, phi - P*) / h(t) = max(0, P* - phi)
+        # since the previous decision (uncapped). cpl_base_table maps shock_key(e_j)
+        # -> mean random-policy CPL under that shock (calibrate_resilience_constants.py);
+        # it only normalizes the reward. cpl_max_fraction (p) is evaluation-only:
+        # u = B_K / (p * CPL_base[e_j]) is logged at episode end, never fed back.
+        # No Lagrange multiplier, no u_k observation, no trace-completion reward.
+        self.cpl_base_table = cpl_base_table
+        self.rf2_epsilon = rf2_epsilon
+        self.cpl_max_fraction = cpl_max_fraction
+        self.cpl_base_current = None       # CPL_base[e_j] of this episode's shock, set in reset()
+        if reward_function == 'RF2' and (shock_config is None or not cpl_base_table):
+            raise ValueError(
+                "RF2 normalizes by CPL_base of the episode's shock: it needs both a "
+                "shock_config and a cpl_base_table (from calibrate_resilience_constants.py)."
+            )
         # D9 (RF1): potential-based shaping parameters.
         self.phi_fix = phi_fix             # worst PPI from random-policy calibration rollouts
         self.beta = beta                   # r1/r2 convex-combination weight, beta in (0,1)
@@ -165,8 +182,6 @@ class gym_env(Env):
             self.input += ['day', 'hour']
         # D5/D7: shock signal — lets the agent distinguish shock vs. no-shock states.
         self.input += ['shock_active']
-        # D6/D7: Lagrange multiplier u_k — exposes constraint pressure to the policy.
-        self.input += ['u_k']
         # The outputs are: the assignments (resource, task_type)
         #self.output = [(resource, task_type) for task_type in self.task_types for resource in self.resources] + ['Postpone']
 
@@ -252,6 +267,19 @@ class gym_env(Env):
         once every `ppi_window_n` new completions. 0.0 before the first batch completes."""
         return self._current_phi
 
+    def _integrate_phi_area(self, t):
+        """Advance the running loss/headroom areas from self._area_t to t under the
+        current phi(t). phi is piecewise constant, so integrating up to every batch
+        completion instant and then to the decision time gives the exact areas
+        B = int max(0, phi - P*) dt and int max(0, P* - phi) dt."""
+        if self._area_t is None or self.P_star is None:
+            return
+        dt = t - self._area_t
+        if dt > 0:
+            self.cpl_accumulated += max(0.0, self._current_phi - self.P_star) * dt
+            self.headroom_accumulated += max(0.0, self.P_star - self._current_phi) * dt
+            self._area_t = t
+
     def _canonical_activity(self, activity):
         """D-merge-fix: translate a native Petri-net activity label to Module
         1's merged label (no-op if this dataset has no activity_merge_map, or
@@ -289,11 +317,13 @@ class gym_env(Env):
         print('-------- Resetting environment --------')
         self.total_reward = 0
         self.reward_count = 0
-        # D6: CPL tracking — reset each episode; lagrange_lambda persists.
+        # Exact phi(t) areas — reset each episode. cpl_accumulated is B_k (loss area
+        # above P*), headroom_accumulated the mirrored area below it. _area_t is the
+        # time both are integrated up to; None until the simulation clock is set up.
         self.cpl_accumulated = 0.0
-        self.prev_env_time = 0.0
-        self.u_k = 0.0
-        self.v_k = 0.0
+        self.headroom_accumulated = 0.0
+        self._area_t = None
+        self.cpl_base_current = None
         # D9: tumbling-batch PPI phi(t) tracking — reset each episode (fresh case
         # population). _phi_batch_buffer accumulates new completions not yet forming a
         # full batch; _current_phi is the last fully-resolved batch's mean (held
@@ -380,14 +410,26 @@ class gym_env(Env):
         self.shock_fired = None
         self.shock_onset_time = None
         self.shock_offset_time = None
+        self._area_t = float(self.env.now)
         if self.shock_config is not None:
             warmup_steps = self._warm_up()
             if len(self.tokens) > 0:   # guard: nothing left to disrupt if warm-up exhausted N_TRACES
                 shock_type, magnitude, duration = fire_single_shock(
                     self.env, self.shock_config, self.simulation_process.shock_state,
-                    self.simulation_process,
+                    self.simulation_process, cycle_index=self.shock_cycle_index,
                 )
+                self.shock_cycle_index += 1
                 self.shock_fired = (shock_type, magnitude, duration)
+                if self.cpl_base_table:
+                    key = shock_key(shock_type, magnitude)
+                    if key not in self.cpl_base_table:
+                        raise ValueError(
+                            f"No CPL_base calibrated for shock {key} (table has "
+                            f"{sorted(self.cpl_base_table)}). RF2 needs one per shock "
+                            f"configuration -- use a cycle_schedule whose entries were all "
+                            f"calibrated by calibrate_resilience_constants.py."
+                        )
+                    self.cpl_base_current = self.cpl_base_table[key]
                 self.shock_onset_time = float(self.env.now)
                 self.shock_offset_time = self.shock_onset_time + duration
                 # D9: snapshot how many phi(t) batches existed at shock onset, so
@@ -421,9 +463,8 @@ class gym_env(Env):
             self.reward_count = 0
             self._phi_batch_buffer = []
             self.cpl_accumulated = 0.0
-            self.prev_env_time = float(self.env.now)
-            self.u_k = 0.0
-            self.v_k = 0.0
+            self.headroom_accumulated = 0.0
+            self._area_t = float(self.env.now)
 
         return self.get_state(), {}
 
@@ -506,10 +547,15 @@ class gym_env(Env):
         '''
         #print(len(self.simulation_process.tokens_pending), len(self.simulation_process.traces['ongoing']), len(self.simulation_process.traces['ended']))
         reward = 0
+        # RF2's D_k / H_k are the area increments over this step: snapshot first.
+        cpl_before, headroom_before = self.cpl_accumulated, self.headroom_accumulated
         # Gather rewards
         for trace_id, cycle_time in self.simulation_process.traces['ended']:
             if trace_id not in self.completed_traces:
                 self.completed_traces.append(trace_id)
+                # traces['ended'] is in completion order: integrate the old phi(t) up
+                # to this completion's instant before it can change phi(t) below.
+                self._integrate_phi_area(self.simulation_process.trace_end_times[trace_id])
                 # D9: feed the tumbling-batch PPI phi(t) — shared by RF1 and RF2,
                 # regardless of which reward function is active. One trace completion
                 # is appended per iteration of this loop (never more than one at a
@@ -524,7 +570,7 @@ class gym_env(Env):
                     self._phi_batches_completed += 1
                 if self.reward_function == 'negative_CT':
                     reward -= cycle_time/self.normalization_cycle_time
-                elif self.reward_function in ('inverse_CT', 'RF2'):
+                elif self.reward_function == 'inverse_CT':
                     reward += 1 / (1 + (cycle_time/self.normalization_cycle_time))
                 elif self.reward_function == 'RF1':
                     # D9 (RF1): potential-based recovery shaping + normalized deviation penalty.
@@ -541,25 +587,16 @@ class gym_env(Env):
                     self.prev_ppi = phi_t
                 self.reward_count += 1
 
-        # D6/D9 (RF2): SMDP CPL budget accumulation (B_k) + constrained-MDP violation
-        # penalty (v_k). d(t) = max(0, phi(t) - P*) is already ~0 whenever performance
-        # is at/below P*, so this naturally keeps accruing through the post-shock
-        # recovery tail without needing an explicit shock-active gate.
-        if self.reward_function == 'RF2':
-            if self.P_star is None:
-                raise ValueError("RF2 requires P_star (from the Module 1 artifact) to be set.")
-            current_time = float(self.env.now)
-            dt = current_time - self.prev_env_time
-            if dt > 0:
-                phi_t = self._current_ppi()
-                d_t = max(0.0, phi_t - self.P_star)
-                self.cpl_accumulated += d_t * dt          # B_k
-            self.prev_env_time = current_time
-            self.u_k = self.cpl_accumulated / self.cpl_budget if self.cpl_budget > 0 else 0.0
-            self.v_k = max(0.0, self.u_k - 1.0)
-            # f2 = 1 unconditionally: there is no postpone/no-op action, so every
-            # decision step is "the agent taking an action".
-            reward -= self.lagrange_lambda * self.v_k
+        # Close this step's areas at the decision time t_k (last completion -> now).
+        self._integrate_phi_area(float(self.env.now))
+        D_k = self.cpl_accumulated - cpl_before
+        H_k = self.headroom_accumulated - headroom_before
+
+        # RF2 (revised): r_k = (-D_k + epsilon * H_k) / CPL_base[e_j]. Only defined
+        # once this episode's shock has fired (cpl_base_current set in reset()); the
+        # hidden warm-up runs before that, and its rewards are discarded anyway.
+        if self.reward_function == 'RF2' and self.cpl_base_current is not None:
+            reward += (-D_k + self.rf2_epsilon * H_k) / self.cpl_base_current
 
         self.total_reward += reward
 
@@ -592,20 +629,25 @@ class gym_env(Env):
             isTerminated = episode_done
             self.cycle_times = [cycle_time for (trace_id, cycle_time) in self.simulation_process.traces['ended']]
             self.mean_cycle_time = np.mean([cycle_time for (trace_id, cycle_time) in self.simulation_process.traces['ended']])
-            if self.reward_function in ('inverse_CT', 'RF2'):
+            if self.reward_function == 'inverse_CT':
                 self.total_reward_end = sum([1 / (1 + (cycle_time/self.normalization_cycle_time)) for (trace_id, cycle_time) in self.simulation_process.traces['ended']])
             elif self.reward_function == 'negative_CT':
                 self.total_reward_end = sum([(-cycle_time/self.normalization_cycle_time) for (trace_id, cycle_time) in self.simulation_process.traces['ended']])
-            elif self.reward_function == 'RF1':
-                # RF1's reward isn't a pure post-hoc function of final cycle_times (it
-                # depends on the phi(t) history built up incrementally), so there's no
+            else:
+                # RF1/RF2 aren't pure post-hoc functions of final cycle_times (they
+                # depend on the phi(t) history built up incrementally), so there's no
                 # equivalent independent "final calc" cross-check to recompute here —
                 # just mirror the already-accumulated total.
                 self.total_reward_end = self.total_reward
-            # D6/D9 (RF2): update Lagrange multiplier at episode end, driven by the
-            # violation signal v_k (spec), not the raw cpl_accumulated-cpl_budget diff.
-            if self.reward_function == 'RF2':
-                self.lagrange_lambda = max(0.0, self.lagrange_lambda + self.eta_lambda * self.v_k)
+            # Evaluation-only CPL figures (RF2_reward_function.md SS4/SS7): never fed
+            # back into the reward or the observation.
+            if self.cpl_base_current:
+                cpl_ratio = self.cpl_accumulated / self.cpl_base_current
+                print(f'CPL B_K={self.cpl_accumulated:.1f} CPL_base={self.cpl_base_current:.1f} '
+                      f'ratio={cpl_ratio:.4f} headroom={self.headroom_accumulated:.1f}', flush=True)
+                if self.cpl_max_fraction:
+                    print(f'u = B_K / CPL_max (p={self.cpl_max_fraction}) = '
+                          f'{cpl_ratio / self.cpl_max_fraction:.4f}', flush=True)
             # self.nr_steps is cumulative across the WHOLE training run (never reset in
             # reset(), only initialised once in __init__) -- this is the same counter
             # SB3 itself is counting toward time_steps (train_DRL.py's total_timesteps
@@ -727,15 +769,11 @@ class gym_env(Env):
         #wip = [(len(env_state['traces']['ongoing'])+1)/1000]
         # D5/D7: shock signal (1.0 = shock active, 0.0 = normal).
         shock_active = [float(self.simulation_process.shock_state.is_active)]
-        # D6/D9: budget-utilization ratio u_k = B_k / CPL_max (NOT lambda_k — this was
-        # previously mislabeled as lambda_k here). Clamped to [0, 1] to match the
-        # declared observation_space Box bounds (violation still visible via v_k/reward).
-        u_k = [min(1.0, getattr(self, 'u_k', 0.0))]
         if self.CALENDAR:
             time = [env_state['time'].weekday()/6, (env_state['time'].hour*3600 + env_state['time'].minute*60 + env_state['time'].second)/(24*3600)]
-            return np.array(resource_available + resource_assigned_to + task_types_num + time + shock_active + u_k)
+            return np.array(resource_available + resource_assigned_to + task_types_num + time + shock_active)
         else:
-            return np.array(resource_available + resource_assigned_to + task_types_num + shock_active + u_k)
+            return np.array(resource_available + resource_assigned_to + task_types_num + shock_active)
 
     # Create an action mask which invalidates ineligible actions
     def action_masks(self) -> List[bool]:

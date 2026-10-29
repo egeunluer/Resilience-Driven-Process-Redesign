@@ -23,6 +23,10 @@ class SimulationProcess(object):
         self._am_parallel = []
         self._actual_assignment = []
         self.traces = {"ongoing": [], "ended": []}
+        # Simulation time each trace completed at, keyed by trace id. traces["ended"]
+        # only keeps (id, cycle_time); gym_env needs the completion instant to
+        # integrate phi(t) exactly when a batch completes between two decisions.
+        self.trace_end_times = {}
         self.resources_available = True ### check if there are resource to assign one event
         self.tokens_pending = {} ### dictionary keyv = id_case, element = tokenOBJ
         self.next_assign = None
@@ -142,6 +146,7 @@ class SimulationProcess(object):
         #previous_time = tupla[1]
         self.traces["ongoing"].remove(tupla)
         self.traces["ended"].append((id, time))
+        self.trace_end_times[id] = float(self._env.now)
         self._resource_trace.release(request_resource)
 
     def update_kpi_trace(self, id, time):

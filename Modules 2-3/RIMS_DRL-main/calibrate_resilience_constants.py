@@ -9,10 +9,11 @@ inside train_DRL.py:
              valid[0]/"FIFO" -- valid[0] concentrates ~30%+ of assignments on
              one alphabetically-first resource and was never the basis for any
              validated result this project has produced).
-  cpl_base : RF2's CPL_base -- mean accumulated CPL across N seeded
-             least-used-policy episodes under one fixed, representative shock,
-             using P_star above (pooled across seeds, not a single episode,
-             so a non-breaching seed can't silently zero it out).
+  cpl_base_table : RF2's CPL_base, one value per shock configuration e_j of
+             the training cycle (RF2_reward_function.md SS4) -- mean exact CPL
+             area (gym_env.cpl_accumulated) across N seeded random-policy
+             episodes under that shock, using P_star above. Keyed by
+             shock.shock_key(type, magnitude), e.g. 'DEMAND_SPIKE:2'.
   phi_fix  : RF1's phi_fix -- worst phi(t) observed across K random-policy
              episodes, under the same fixed shock.
 
@@ -34,7 +35,8 @@ Usage:
     --pool "../../Module 1/artifacts/bpi2017_pure_generalist_pool.json" \\
     --n-traces 5789 --n-traces-baseline 2000 --n-baseline-seeds 8 \\
     --shock-type DEMAND_SPIKE --shock-magnitude 6 --shock-duration 21600 \\
-    --n-phi-fix-rollouts 5 \\
+    --cycle-demand-spike 2,3,4,5 --cycle-resource-removal 0.2,0.3,0.4,0.5 \\
+    --removal-scope global --n-phi-fix-rollouts 5 \\
     --out "../../Module 1/artifacts/bpi2017_calibration.json"
 """
 import argparse
@@ -44,7 +46,7 @@ from collections import defaultdict
 import numpy as np
 
 from gym_env import gym_env
-from shock import ShockConfig
+from shock import ShockConfig, shock_key
 
 
 def least_used_action(env, valid, assign_count):
@@ -84,8 +86,12 @@ def run_episode(env, seed, action_fn):
 
 
 def build_env(args, reward_function, shock_config, p_star_override=None, phi_fix=None, n_traces=None):
+    # reward_function is irrelevant to every stage here (rewards are never read,
+    # only phi(t) and the CPL area gym_env tracks for every reward function).
+    # Callers pass 'RF1' -- RF2 can't be built here, since it requires the very
+    # cpl_base_table this script produces.
     return gym_env(
-        args.dataset, n_traces if n_traces is not None else args.n_traces, False,
+        args.dataset, n_traces if n_traces is not None else args.n_traces, args.calendar,
         threshold=args.threshold, postpone=False,
         reward_function=reward_function,
         artifact_path=args.artifact,
@@ -136,7 +142,7 @@ def calibrate_p_star(args):
           f"formula={args.p_star_formula} ===", flush=True)
     all_cycle_times = []
     for seed in range(args.n_baseline_seeds):
-        env = build_env(args, reward_function='RF2', shock_config=None, n_traces=n_traces_baseline)
+        env = build_env(args, reward_function='RF1', shock_config=None, n_traces=n_traces_baseline)
         run_episode(env, seed, least_used_action)
         cts = [ct for (_, ct) in env.simulation_process.traces['ended']]
         all_cycle_times.extend(cts)
@@ -152,32 +158,42 @@ def calibrate_p_star(args):
     return p_star
 
 
-def calibrate_cpl_base(args, p_star):
-    # Pooled across n_baseline_seeds seeds (not a single seed=0 episode): a
-    # single-episode calibration risks landing on a seed where phi(t) never
-    # exceeds P* under this shock at all, giving cpl_base=0 -- which would
-    # silently disable RF2's whole constraint-violation penalty for training
-    # (cpl_budget = p * cpl_base = 0 forces u_k, and therefore v_k, to 0 for
-    # every subsequent episode). Confirmed happening on Consulta at
-    # magnitude=6/20h before this fix. Pooling as a mean across seeds instead.
-    print(f"=== cpl_base calibration: least-used policy, {args.n_baseline_seeds} "
-          f"seeded episodes under the fixed shock (type={args.shock_type}, "
-          f"magnitude={args.shock_magnitude}, duration={args.shock_duration}s) ===", flush=True)
-    shock_config = ShockConfig(
-        mode='eval', eval_shock_type=args.shock_type,
-        eval_magnitude=args.shock_magnitude, eval_duration=args.shock_duration,
-    )
-    cpl_per_seed = []
-    for seed in range(args.n_baseline_seeds):
-        env = build_env(args, reward_function='RF2', shock_config=shock_config, p_star_override=p_star)
-        run_episode(env, seed=seed, action_fn=least_used_action)
-        cpl_per_seed.append(env.cpl_accumulated)
-        print(f"  seed={seed}: cpl_accumulated = {env.cpl_accumulated:.4f}", flush=True)
-    n_zero = sum(1 for c in cpl_per_seed if c == 0.0)
-    cpl_base = float(np.mean(cpl_per_seed))
-    print(f"cpl_base (mean across {args.n_baseline_seeds} seeds, {n_zero} of which never "
-          f"breached P*) = {cpl_base:.4f}\n", flush=True)
-    return cpl_base
+def cycle_schedule_from_args(args):
+    """The ordered (shock_type, magnitude) cycle, as train_DRL.py's
+    ShockConfig.cycle_schedule must also list it."""
+    return ([('DEMAND_SPIKE', float(m)) for m in args.cycle_demand_spike.split(',') if m]
+            + [('RESOURCE_REMOVAL', float(m)) for m in args.cycle_resource_removal.split(',') if m])
+
+
+def calibrate_cpl_base_table(args, p_star):
+    # One CPL_base per shock configuration e_j (RF2_reward_function.md SS4): the
+    # mean exact CPL area of a non-adaptive (random) policy under that same shock,
+    # pooled across n_baseline_seeds seeds so a single non-breaching seed can't
+    # zero it out. A value of 0 means that shock never pushed phi(t) above P*
+    # under the random policy in any seed -- reported loudly below, since
+    # train_DRL.py refuses to normalize RF2's reward by it.
+    table, per_seed = {}, {}
+    for shock_type, magnitude in cycle_schedule_from_args(args):
+        key = shock_key(shock_type, magnitude)
+        print(f"=== CPL_base[{key}]: random policy, {args.n_baseline_seeds} seeded episodes, "
+              f"duration={args.shock_duration}s, removal scope={args.removal_scope} ===", flush=True)
+        shock_config = ShockConfig(
+            mode='eval', eval_shock_type=shock_type, eval_magnitude=magnitude,
+            eval_duration=args.shock_duration, resource_removal_scope=args.removal_scope,
+        )
+        cpls = []
+        for seed in range(args.n_baseline_seeds):
+            env = build_env(args, reward_function='RF1', shock_config=shock_config, p_star_override=p_star)
+            run_episode(env, seed=seed, action_fn=random_action)
+            cpls.append(float(env.cpl_accumulated))
+            print(f"  seed={seed}: CPL = {env.cpl_accumulated:.1f}", flush=True)
+        table[key] = float(np.mean(cpls))
+        per_seed[key] = cpls
+        n_zero = sum(1 for c in cpls if c == 0.0)
+        print(f"CPL_base[{key}] = {table[key]:.1f} (mean over {len(cpls)} seeds, {n_zero} never "
+              f"breached P*){'  <-- WARNING: zero, unusable as an RF2 normalizer' if table[key] == 0 else ''}\n",
+              flush=True)
+    return table, per_seed
 
 
 def calibrate_phi_fix(args, p_star):
@@ -186,6 +202,7 @@ def calibrate_phi_fix(args, p_star):
     shock_config = ShockConfig(
         mode='eval', eval_shock_type=args.shock_type,
         eval_magnitude=args.shock_magnitude, eval_duration=args.shock_duration,
+        resource_removal_scope=args.removal_scope,
     )
     worst_per_rollout = []
     for k in range(args.n_phi_fix_rollouts):
@@ -208,6 +225,14 @@ def main():
                               "BPI2017/Consulta/Helpdesk. Optional: omit to use the full artifact-driven "
                               "resource set directly (e.g. PurchasingExample, whose resource distribution "
                               "didn't need curating).")
+    parser.add_argument('--calendar', action='store_true',
+                         help="Use business-hours resource calendars (gym_env's CALENDAR=True) "
+                              "instead of always-on availability. Every existing calibration file "
+                              "in this project was computed with this OFF (the default here too) -- "
+                              "P_star/cpl_base/phi_fix are only valid reference points for the "
+                              "calendar setting they were calibrated under, so a calibration file's "
+                              "config_used.calendar must match whatever CALENDAR value train_DRL.py/"
+                              "compute_resilience_metrics.py run with (both scripts refuse a mismatch).")
     parser.add_argument('--threshold', type=int, default=20)
     parser.add_argument('--n-traces', type=int, required=True,
                          help="Used for the shocked stages (cpl_base/phi_fix), which already "
@@ -234,25 +259,38 @@ def main():
                               "(dataset, pool) pair -- calibration, training, eval -- must use the "
                               "same value, since P*/cpl_base/phi_fix are only meaningful reference "
                               "points relative to whatever window size computed them.")
-    parser.add_argument('--shock-type', default='DEMAND_SPIKE')
-    parser.add_argument('--shock-magnitude', type=float, required=True)
-    parser.add_argument('--shock-duration', type=float, required=True)
+    parser.add_argument('--shock-type', default='DEMAND_SPIKE',
+                         help="phi_fix stage (RF1) only.")
+    parser.add_argument('--shock-magnitude', type=float, required=True,
+                         help="phi_fix stage (RF1) only.")
+    parser.add_argument('--shock-duration', type=float, required=True,
+                         help="Shared by every shocked stage; must match train_DRL.py's duration_range.")
+    parser.add_argument('--cycle-demand-spike', default='2,3,4,5',
+                         help="DEMAND_SPIKE magnitudes of the training cycle, in order -- one "
+                              "CPL_base each. Must match train_DRL.py's cycle_schedule.")
+    parser.add_argument('--cycle-resource-removal', default='0.2,0.3,0.4,0.5',
+                         help="RESOURCE_REMOVAL magnitudes of the training cycle, in order -- one "
+                              "CPL_base each. Must match train_DRL.py's cycle_schedule.")
+    parser.add_argument('--removal-scope', choices=['global', 'activity'], default='global',
+                         help="ShockConfig.resource_removal_scope; must match train_DRL.py.")
     parser.add_argument('--n-phi-fix-rollouts', type=int, default=5)
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
 
     p_star = calibrate_p_star(args)
-    cpl_base = calibrate_cpl_base(args, p_star)
+    cpl_base_table, cpl_base_per_seed = calibrate_cpl_base_table(args, p_star)
     phi_fix = calibrate_phi_fix(args, p_star)
 
     result = {
         "P_star": p_star,
-        "cpl_base": cpl_base,
+        "cpl_base_table": cpl_base_table,
+        "cpl_base_per_seed": cpl_base_per_seed,
         "phi_fix": phi_fix,
         "config_used": {
             "dataset": args.dataset,
             "artifact": args.artifact,
             "pool": args.pool,
+            "calendar": args.calendar,
             "threshold": args.threshold,
             "n_traces": args.n_traces,
             "n_traces_baseline": args.n_traces_baseline if args.n_traces_baseline is not None else args.n_traces,
@@ -260,6 +298,9 @@ def main():
             "ppi_window_n": args.ppi_window_n,
             "p_star_formula": args.p_star_formula,
             "policy": "least_used",
+            "cpl_base_policy": "random",
+            "cycle_schedule": [[t, m] for t, m in cycle_schedule_from_args(args)],
+            "removal_scope": args.removal_scope,
             "shock_type": args.shock_type,
             "shock_magnitude": args.shock_magnitude,
             "shock_duration": args.shock_duration,

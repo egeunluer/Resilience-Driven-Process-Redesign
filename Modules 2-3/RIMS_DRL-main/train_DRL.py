@@ -52,19 +52,45 @@ if len(sys.argv) > 1:
     pool_override_path = sys.argv[8] if len(sys.argv) > 8 else None
     calibration_path = sys.argv[9] if len(sys.argv) > 9 else None
 else:
-    NAME_LOG = 'BPI_Challenge_2017_W_Two_TS'
-    N_TRACES = 'from_input_data'
-    CALENDAR = False   # D10: uniform calendars — always False for resilience experiments
+    # Wired for Consulta's CALENDAR=True min3activities_plus157 pool
+    # (RIMS_DRL_Modification_Plan.md Step 60-64): CALENDAR=True alone (no
+    # shock) roughly quadruples P* (25,946s -> 109,604.5s) -- two of
+    # Consulta's 11 real activities have only 1-2 eligible resources, both
+    # defaulting to a synthetic Mon-Fri 08:00-18:00 window with no mined
+    # calendar of their own. D10's original rationale (don't let shift
+    # patterns confound the shock signal) still holds for BPI2017/BPI12W/
+    # other pools that haven't had this same investigation -- this branch is
+    # Consulta-specific, not a dataset-agnostic default.
+    NAME_LOG = 'ConsultaDataMining201618'
+    # N_TRACES: NOT 'from_input_data' (181, Consulta's real case count).
+    # Training_Readiness_Implementation_Summary.md SS30 found a strong,
+    # long demand spike can exhaust the whole 181-case population before the
+    # backlog drains, which reads as "never recovered" for a reason
+    # unrelated to resilience -- not a hard ceiling, since Consulta's
+    # 'custom' (Prophet) arrival generator extrapolates arbitrarily far
+    # (SS30: N_TRACES=400 fixed this with no code changes). Set to 2000 to
+    # match calibrate_resilience_constants.py's own n_traces for this pool
+    # (consulta_min3activities_plus157_calendar_calibration.json).
+    N_TRACES = 2000
+    CALENDAR = True
+    # threshold=20 matches the calibration file's config_used.threshold
+    # exactly; functionally inert here since pool_override_path below
+    # replaces self.resources regardless of which input_<name>.json loads.
     threshold = 20
+    # RF1: user's standing default reward function when unspecified
+    # (Training_Readiness_Implementation_Summary.md SS48), overriding
+    # train_DRL.py's own historical no-argv default of RF2.
     reward_function = 'RF2'
-    artifact_path = None   # set this to the Module 1 artifact path before running
-    pool_override_path = None
-    calibration_path = None
+    artifact_path = '../../Module 1/artifacts/consulta.json'
+    pool_override_path = '../../Module 1/artifacts/consulta_min3activities_plus157_pool.json'
+    calibration_path = '../../Module 1/artifacts/consulta_min3activities_plus157_calendar_calibration.json'
 
-# D9/D6: RF2's CPL budget fraction (CPL_max = p * CPL_base) and RF1's r1/r2 combination
-# weight. Defaults per Module_3_DRL_Environment_and_Agent.md §5/§8. Must match
-# whatever calibrate_resilience_constants.py used for cpl_base -> cpl_budget.
+# RF2 (revised, RF2_reward_function.md): r_k = (-D_k + rf2_epsilon * H_k) / CPL_base[e_j],
+# headroom H uncapped. p_cpl_fraction is evaluation-only (CPL_max = p * CPL_base[e_j],
+# u = B_K / CPL_max logged at episode end) -- never part of the reward.
+rf2_epsilon = 0.5
 p_cpl_fraction = 0.5
+# RF1's r1/r2 combination weight (Module_3_DRL_Environment_and_Agent.md §8).
 beta = 0.5
 
 
@@ -80,7 +106,7 @@ beta = 0.5
 # the old recurring scheduler's inter-shock interval) — left here for reference
 # only, in case some other script still uses the recurring scheduler directly.
 # ---------------------------------------------------------------------------
-from shock import ShockConfig
+from shock import ShockConfig, shock_key
 shock_config = ShockConfig(
     mode='train',
     # RESOURCE_REMOVAL re-enabled: it previously shared magnitude_range with
@@ -95,17 +121,21 @@ shock_config = ShockConfig(
     # RESOURCE_REMOVAL draws; magnitude_range below is DEMAND_SPIKE-only.
     shock_types=['RESOURCE_REMOVAL', 'DEMAND_SPIKE'],
     # magnitude_range (DEMAND_SPIKE only): was (0.2, 0.5) -- a 1.2x-1.5x arrival
-    # bump, far milder than what calibration/eval actually use. Every P*/
-    # cpl_base/phi_fix calibration and resilience-metric run this project has
-    # produced (calibrate_resilience_constants.py, compute_resilience_metrics.py)
-    # uses magnitude in [5, 8] (a 6x-9x arrival multiplier -- DEMAND_SPIKE's
-    # multiplier is 1+magnitude), the validated realistic range
-    # (Training_Readiness_Implementation_Summary.md SS32). Training on (0.2, 0.5)
-    # while being evaluated against [5, 8] would mean the agent rarely, if ever,
-    # practices on a shock severe enough to need a real recovery response during
-    # training. Matched to [5, 8] here so training and eval see the same
-    # disruption regime.
-    magnitude_range=(5.0, 8.0),
+    # bump, far milder than what calibration/eval actually use. The original
+    # calendar=False calibration across this project used magnitude in [5, 8]
+    # (a 6x-9x arrival multiplier -- DEMAND_SPIKE's multiplier is
+    # 1+magnitude). For Consulta's CALENDAR=True min3activities_plus157 pool
+    # specifically, a compute_resilience_metrics.py scan at magnitudes 2/3/4
+    # (duration=360,000s/100h, 2 seeds each) found every one of those milder
+    # magnitudes already breaches P* and recovers -- this calendar-on pool is
+    # fragile at 3x-5x arrivals, not just 6x-9x. Narrowed to [2, 5] so the
+    # agent trains across the magnitudes actually shown to matter for this
+    # pool, rather than only the far end of the range. Note: cpl_base/phi_fix
+    # in the calibration file below were still computed at a single fixed
+    # magnitude=6 point (calibrate_resilience_constants.py never resampled
+    # across a range) -- those anchors remain valid as fixed reference values
+    # regardless of what range training itself samples from.
+    magnitude_range=(2.0, 5.0),
     # resource_removal_magnitude_range (RESOURCE_REMOVAL only): fraction of an
     # activity's eligible resource pool to remove, must stay within [0, 1].
     # (0.2, 0.5) is this project's original, unchanged RESOURCE_REMOVAL range --
@@ -113,13 +143,54 @@ shock_config = ShockConfig(
     # different eval magnitude, so there's no "match eval" argument for moving
     # this one.
     resource_removal_magnitude_range=(0.2, 0.5),
-    # duration_range: was (1800.0, 7200.0) (30min-2h) -- calibration/eval both use
-    # a fixed 21,600s (6h) shock (calibrate_resilience_constants.py,
-    # compute_resilience_metrics.py). Fixed here to the same 21,600s rather than
-    # sampled, for the same reason as magnitude_range above: training should see
-    # the same disruption regime it's evaluated against.
-    duration_range=(21600.0, 21600.0),
+    # resource_removal_scope: 'global' -- magnitude is the fraction of the
+    # WHOLE curated pool removed (e.g. 0.5 of 22 resources -> 11), not of one
+    # randomly chosen activity's eligible resources ('activity', the
+    # ShockConfig default). Activity scope was found to remove only ~1.6-3.7
+    # resources on average for Consulta (5 of 11 activities have <=3 eligible
+    # resources, so magnitude barely changed anything) and produced no
+    # measurable phi(t) disruption at any magnitude in [0.2, 0.5].
+    resource_removal_scope='global',
+    # duration_range: dataset/pool-dependent -- must equal whatever fixed
+    # shock_duration calibrate_resilience_constants.py used for the
+    # calibration file this run loads (both scripts already enforce
+    # dataset/pool/calendar matching a calibration file; duration is not yet
+    # cross-checked the same way, so keeping this in sync is on the caller).
+    # 21,600s (6h) was correct for every calendar=False calibration on this
+    # project (BPI2017, BPI12W, Consulta, etc.) -- unchanged for those.
+    # For Consulta with CALENDAR=True specifically, 21,600s was found to be
+    # far too short to be a real disruption: with the calendar's baseline
+    # congestion alone quadrupling P* (see the CALENDAR comment above), a 6h
+    # DEMAND_SPIKE never breaches it at any tested magnitude (5-8x arrivals,
+    # 0/8 magnitude x seed combinations breached). A duration scan at fixed
+    # magnitude found the breach crossover sits between 2x and 5x the
+    # original 20h (=72,000s) baseline duration, i.e. somewhere around
+    # 144,000-360,000s -- real cases in this exact log run up to 135.84 days
+    # (Camargo et al. 2022, Table 1: Consulta = "ACR", avg 14.89d / max
+    # 135.84d case duration), so testing at this scale is not unrealistic.
+    # Set to 360,000s (100h), comfortably past the crossover and matched to
+    # the recalibrated consulta_min3activities_plus157_calendar_calibration.json
+    # (see RIMS_DRL_Modification_Plan.md Step 60). BPI2017's own CALENDAR=True
+    # investigation (Step 65-68) independently used the same 100h duration
+    # for its magnitude scan and calibration probes -- also breach-worthy
+    # there (P* +62%, cpl_base ~388x), though BPI2017's own calibration file
+    # was never regenerated/wired here (Phase 23 was investigation-only).
+    # Revert to 21,600.0 for any dataset/pool whose calibration file was
+    # computed with calendar=False.
+    duration_range=(360000.0, 360000.0),
     lambda_rate=1 / 7200.0,   # unused by the single-shock flow; see note above
+    # cycle_schedule: shocks are presented in a fixed order instead of sampled
+    # at random -- one entry per episode, wrapping around: DEMAND_SPIKE
+    # magnitude 2 -> 3 -> 4 -> 5, then back to 2. Guarantees every magnitude is
+    # visited equally often, rather than relying on random draws to cover the
+    # range. While this is non-empty, shock_types/magnitude_range/
+    # resource_removal_magnitude_range above are ignored; duration_range still
+    # applies (fixed at 100h). Set to [] to go back to random sampling.
+    # RESOURCE_REMOVAL is deliberately absent: on this pool, global removal of
+    # 20-70% of resources for 100h (and even 1 week) never breached P* beyond
+    # the no-shock noise level, so its RF2 CPL_base is 0 and the reward can't be
+    # normalized by it -- the min-3 pool's versatile resources absorb it fully.
+    cycle_schedule=[('DEMAND_SPIKE', m) for m in (2.0, 3.0, 4.0, 5.0)],
 )
 # Set to None to train without shocks (baseline comparison).
 # shock_config = None
@@ -145,7 +216,7 @@ if __name__ == '__main__':
     os.makedirs(log_dir, exist_ok=True)
 
     # ---------------------------------------------------------------------------
-    # Fixed calibration constants (P*, cpl_base -> cpl_budget, phi_fix): loaded
+    # Fixed calibration constants (P*, per-shock CPL_base table, phi_fix): loaded
     # from a file produced once by calibrate_resilience_constants.py, never
     # recomputed live here. A live recompute on every launch was found to risk
     # inconsistency across runs (different pool, different random draw, etc.);
@@ -156,7 +227,7 @@ if __name__ == '__main__':
     # own recorded dataset/pool don't match what was requested here.
     # ---------------------------------------------------------------------------
     p_star_override = None
-    cpl_budget = 0.0
+    cpl_base_table = None
     phi_fix = None
     if shock_config is not None:
         if calibration_path is None:
@@ -180,9 +251,52 @@ if __name__ == '__main__':
                 f"'{cfg.get('pool')}', not '{pool_override_path}'. Refusing to reuse a "
                 f"mismatched calibration."
             )
+        # calendar: P_star/cpl_base/phi_fix are baseline/shock statistics computed
+        # under one specific resource-availability regime (always-on vs.
+        # business-hours calendars) -- reusing a calendar=False calibration while
+        # actually running CALENDAR=True (or vice versa) silently judges phi(t)
+        # against a threshold from a different regime. Older calibration files
+        # predate this field entirely; they were all computed with CALENDAR=False
+        # (calibrate_resilience_constants.py's build_env hardcoded it), so default
+        # the missing case to False rather than skipping the check.
+        if cfg.get('calendar', False) != CALENDAR:
+            raise ValueError(
+                f"Calibration file {calibration_path} was computed with calendar="
+                f"{cfg.get('calendar', False)}, not calendar={CALENDAR}. Refusing to reuse a "
+                f"mismatched calibration."
+            )
         p_star_override = calibration['P_star']
-        cpl_budget = p_cpl_fraction * calibration['cpl_base']   # CPL_max = p * CPL_base
         phi_fix = calibration['phi_fix']
+        if reward_function == 'RF2':
+            # One CPL_base per shock configuration e_j, keyed by shock_key(). Every
+            # shock this run can fire must have a calibrated, non-zero value, under
+            # the same duration and removal scope -- refuse rather than normalize a
+            # shock's reward by a value calibrated for a different shock.
+            cpl_base_table = calibration.get('cpl_base_table')
+            if not cpl_base_table:
+                raise ValueError(
+                    f"RF2 needs a per-shock cpl_base_table, but {calibration_path} has none "
+                    f"(it predates the revised RF2). Re-run calibrate_resilience_constants.py."
+                )
+            if not shock_config.cycle_schedule:
+                raise ValueError("RF2 needs shock_config.cycle_schedule: CPL_base is only "
+                                 "calibrated for discrete (type, magnitude) shocks.")
+            if (cfg.get('shock_duration'), cfg.get('removal_scope')) != \
+                    (shock_config.duration_range[0], shock_config.resource_removal_scope) \
+                    or shock_config.duration_range[0] != shock_config.duration_range[1]:
+                raise ValueError(
+                    f"Calibration shock duration/removal scope ({cfg.get('shock_duration')}, "
+                    f"{cfg.get('removal_scope')}) don't match this run's fixed "
+                    f"({shock_config.duration_range}, {shock_config.resource_removal_scope})."
+                )
+            for shock_type, magnitude in shock_config.cycle_schedule:
+                key = shock_key(shock_type, magnitude)
+                if cpl_base_table.get(key, 0.0) <= 0.0:
+                    raise ValueError(
+                        f"CPL_base[{key}] is missing or zero in {calibration_path}: that shock "
+                        f"never breached P* under the random policy, so RF2's reward can't be "
+                        f"normalized by it."
+                    )
         # D9 (revised): phi(t)'s tumbling-batch size must match what P*/cpl_base/
         # phi_fix above were calibrated under -- read it from the same file rather
         # than letting this script default independently. See gym_env.py's
@@ -199,9 +313,8 @@ if __name__ == '__main__':
                   f"re-run calibrate_resilience_constants.py for a consistent result.",
                   flush=True)
         print(f"Loaded calibration from {calibration_path}: "
-              f"P_star={p_star_override:.4f} cpl_base={calibration['cpl_base']:.4f} "
-              f"cpl_budget(p={p_cpl_fraction})={cpl_budget:.4f} phi_fix={phi_fix:.4f} "
-              f"ppi_window_n={ppi_window_n_override}", flush=True)
+              f"P_star={p_star_override:.4f} phi_fix={phi_fix:.4f} "
+              f"ppi_window_n={ppi_window_n_override} cpl_base_table={cpl_base_table}", flush=True)
     else:
         ppi_window_n_override = None
 
@@ -214,8 +327,9 @@ if __name__ == '__main__':
         reward_function=reward_function,
         artifact_path=artifact_path,
         shock_config=shock_config,
-        cpl_budget=cpl_budget,
-        eta_lambda=0.01,
+        cpl_base_table=cpl_base_table,
+        rf2_epsilon=rf2_epsilon,
+        cpl_max_fraction=p_cpl_fraction,
         phi_fix=phi_fix,
         beta=beta,
         pool_override_path=pool_override_path,
@@ -225,7 +339,9 @@ if __name__ == '__main__':
     env = Monitor(env_simulator, log_dir)
 
     # Create the model.
-    gamma = 0.999 if reward_function in ('inverse_CT', 'RF2') else 1
+    # gamma=1 for RF1/RF2 (RF2_reward_function.md SS6: the episode return is then
+    # exactly the signed phi(t)-area the reward is built from).
+    gamma = 0.999 if reward_function == 'inverse_CT' else 1
     model = MaskablePPO(CustomPolicy, env_simulator, clip_range=0.2, learning_rate=linear_schedule(3e-4), n_steps=int(n_steps), batch_size=256, gamma=gamma, verbose=1)
 
     # Logging to tensorboard.
@@ -240,8 +356,9 @@ if __name__ == '__main__':
         reward_function=reward_function,
         artifact_path=artifact_path,
         shock_config=shock_config,
-        cpl_budget=cpl_budget,
-        eta_lambda=0.01,
+        cpl_base_table=cpl_base_table,
+        rf2_epsilon=rf2_epsilon,
+        cpl_max_fraction=p_cpl_fraction,
         phi_fix=phi_fix,
         beta=beta,
         pool_override_path=pool_override_path,
@@ -250,6 +367,12 @@ if __name__ == '__main__':
     )
     eval_env = Monitor(eval_env, log_dir)
     nr_evaluations = 10 if NAME_LOG != 'BPI_Challenge_2017_W_Two_TS' else 3
+    # With a shock cycle, evaluate exactly one full cycle per evaluation round:
+    # eval_env's own cursor then wraps back to the same starting point every
+    # round, so every round scores the policy on the identical set of shocks
+    # and "best model" comparisons across rounds stay like-for-like.
+    if shock_config is not None and shock_config.cycle_schedule:
+        nr_evaluations = len(shock_config.cycle_schedule)
     eval_callback = EvalPolicyCallback(check_freq=5*int(n_steps), nr_evaluations=nr_evaluations, log_dir=log_dir, eval_env=eval_env)
 
     callback = SaveOnBestTrainingRewardCallback(check_freq=1000, log_dir=log_dir)

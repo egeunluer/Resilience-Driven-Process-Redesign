@@ -79,16 +79,20 @@ class EvalPolicyCallback(BaseCallback):
             print('\n-------- Evaluating current policy --------')
             mean_cycle_times = []
             total_rewards = []
+            # eval_env may be wrapped (e.g. Monitor in train_DRL.py); gymnasium 1.x
+            # wrappers no longer forward attribute lookups, so action_masks()/
+            # mean_cycle_time must be read from the underlying gym_env.
+            raw_env = self.eval_env.unwrapped
             for epoch in range(self.nr_evaluations):
                 state, _ = self.eval_env.reset()
                 isTerminated = False
 
                 while isTerminated == False:
-                    action, _state = self.model.predict(state, action_masks=self.eval_env.action_masks())
+                    action, _state = self.model.predict(state, action_masks=raw_env.action_masks())
                     state, reward, isTerminated, _, _ = self.eval_env.step(action)
 
-                mean_cycle_times.append(self.eval_env.mean_cycle_time)
-                total_rewards.append(self.eval_env.mean_cycle_time)
+                mean_cycle_times.append(raw_env.mean_cycle_time)
+                total_rewards.append(raw_env.mean_cycle_time)
 
             mean_cycle_time = sum(mean_cycle_times)/len(mean_cycle_times)
             total_reward = sum(total_rewards)/len(total_rewards)

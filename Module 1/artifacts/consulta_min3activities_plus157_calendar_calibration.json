@@ -1,0 +1,89 @@
+{
+  "P_star": 109604.5,
+  "cpl_base_table": {
+    "DEMAND_SPIKE:2": 57005255354.60626,
+    "DEMAND_SPIKE:3": 225687616979.86365,
+    "DEMAND_SPIKE:4": 477037074557.8319,
+    "DEMAND_SPIKE:5": 765576520532.6874
+  },
+  "cpl_base_per_seed": {
+    "DEMAND_SPIKE:2": [
+      15384259211.633333,
+      86370104688.1167,
+      32936192882.899998,
+      52202822416.733345,
+      97684123740.00002,
+      60768920464.11666,
+      106941961366.18341,
+      3753658067.1666656
+    ],
+    "DEMAND_SPIKE:3": [
+      98832886708.44998,
+      278277097816.80005,
+      212590412572.5873,
+      223434893747.37494,
+      274580234574.22504,
+      152396938513.44995,
+      272336141073.3251,
+      293052330832.69696
+    ],
+    "DEMAND_SPIKE:4": [
+      439655562061.56036,
+      566953323533.7592,
+      414095882172.2407,
+      490015589468.1609,
+      531414966741.87177,
+      438704020852.7793,
+      562760852427.709,
+      372696399204.5737
+    ],
+    "DEMAND_SPIKE:5": [
+      560339261233.2997,
+      948141033294.4172,
+      640321276569.7751,
+      729335884929.6661,
+      919236918686.8492,
+      729621122434.4171,
+      985573758778.0834,
+      612042908334.9913
+    ]
+  },
+  "phi_fix": 1306578.5428571429,
+  "config_used": {
+    "dataset": "ConsultaDataMining201618",
+    "artifact": "../../Module 1/artifacts/consulta.json",
+    "pool": "../../Module 1/artifacts/consulta_min3activities_plus157_pool.json",
+    "calendar": true,
+    "threshold": 20,
+    "n_traces": 2000,
+    "n_traces_baseline": 2000,
+    "n_baseline_seeds": 8,
+    "ppi_window_n": 5,
+    "p_star_formula": "median",
+    "policy": "least_used",
+    "cpl_base_policy": "random",
+    "cycle_schedule": [
+      [
+        "DEMAND_SPIKE",
+        2.0
+      ],
+      [
+        "DEMAND_SPIKE",
+        3.0
+      ],
+      [
+        "DEMAND_SPIKE",
+        4.0
+      ],
+      [
+        "DEMAND_SPIKE",
+        5.0
+      ]
+    ],
+    "removal_scope": "global",
+    "shock_type": "DEMAND_SPIKE",
+    "shock_magnitude": 6.0,
+    "shock_duration": 360000.0,
+    "n_phi_fix_rollouts": 5
+  }
+}
