@@ -324,6 +324,12 @@ class gym_env(Env):
         self.headroom_accumulated = 0.0
         self._area_t = None
         self.cpl_base_current = None
+        # Post-onset resilience tracking for the episode-end info dict (logged to
+        # TensorBoard by callbacks.ResilienceCallback): worst phi(t) since the shock
+        # fired, and the first instant phi(t) exceeded P* after it.
+        self._max_phi_since_onset = None
+        self._first_breach_time = None
+        self.last_episode_info = {}
         # D9: tumbling-batch PPI phi(t) tracking — reset each episode (fresh case
         # population). _phi_batch_buffer accumulates new completions not yet forming a
         # full batch; _current_phi is the last fully-resolved batch's mean (held
@@ -438,6 +444,8 @@ class gym_env(Env):
                 # (possibly still the pre-shock baseline, if no batch has resolved
                 # since) is <= P_star".
                 self._phi_batches_completed_at_shock_onset = self._phi_batches_completed
+                self._max_phi_since_onset = self._current_phi
+                self._first_breach_time = None
                 print(
                     f'Shock fired at t={self.shock_onset_time:.1f} after {warmup_steps} warm-up steps: '
                     f'type={shock_type} magnitude={magnitude:.3f} duration={duration:.1f} '
@@ -568,6 +576,11 @@ class gym_env(Env):
                     self._current_phi = float(np.mean(self._phi_batch_buffer))
                     self._phi_batch_buffer = []
                     self._phi_batches_completed += 1
+                    if self.shock_fired is not None:
+                        self._max_phi_since_onset = max(self._max_phi_since_onset, self._current_phi)
+                        if (self._first_breach_time is None and self.P_star is not None
+                                and self._current_phi > self.P_star):
+                            self._first_breach_time = self.simulation_process.trace_end_times[trace_id]
                 if self.reward_function == 'negative_CT':
                     reward -= cycle_time/self.normalization_cycle_time
                 elif self.reward_function == 'inverse_CT':
@@ -661,9 +674,43 @@ class gym_env(Env):
             print('Nonzero reward count', self.reward_count, flush=True)
             if recovered:
                 print(f'Recovered: phi(t)={self._current_ppi():.1f} <= P_star={self.P_star:.1f}', flush=True)
+            self.last_episode_info = self._resilience_info(recovered)
         else:
             isTerminated = False
-        return self.get_state(), reward, isTerminated, isTruncated, {}
+        info = {'resilience': self.last_episode_info} if episode_done and self.last_episode_info else {}
+        return self.get_state(), reward, isTerminated, isTruncated, info
+
+    def _resilience_info(self, recovered):
+        """Episode-end resilience metrics (RF2_reward_function.md SS7), for logging
+        only -- never fed back into the reward or the observation. Times in hours.
+        Empty if no shock fired this episode (no post-onset reference exists)."""
+        if self.shock_fired is None or self.P_star is None:
+            return {}
+        shock_type, magnitude, _ = self.shock_fired
+        now = float(self.env.now)
+        info = {
+            'shock': shock_key(shock_type, magnitude),
+            'episode_return': float(self.total_reward),
+            'recovered': float(recovered),
+            'breached': float(self._first_breach_time is not None),
+            'cpl_hours2': self.cpl_accumulated / 3600 ** 2,
+            'max_deviation_hours': max(0.0, self._max_phi_since_onset - self.P_star) / 3600,
+            'max_phi_hours': self._max_phi_since_onset / 3600,
+            'episode_length_hours': (now - self.shock_onset_time) / 3600,
+            'mean_cycle_time_hours': float(self.mean_cycle_time) / 3600,
+            'n_completed': float(len(self.completed_traces)),
+        }
+        if self._first_breach_time is not None:
+            info['time_to_impact_hours'] = (self._first_breach_time - self.shock_onset_time) / 3600
+        if recovered:
+            # First instant after the shock that phi(t) <= P* again (episode end).
+            info['time_to_recovery_hours'] = (now - self.shock_onset_time) / 3600
+        if self.cpl_base_current:
+            info['cpl_ratio'] = self.cpl_accumulated / self.cpl_base_current
+            info['headroom_ratio'] = self.headroom_accumulated / self.cpl_base_current
+            if self.cpl_max_fraction:
+                info['u'] = info['cpl_ratio'] / self.cpl_max_fraction
+        return info
 
     def step_baseline(self, action):
         if action is not None:

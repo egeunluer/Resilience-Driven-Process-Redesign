@@ -66,6 +66,7 @@ class EvalPolicyCallback(BaseCallback):
         self.eval_env = eval_env
         self.save_path = os.path.join(log_dir, model_name)
         self.best_mean_cycle_time = np.inf
+        self.best_mean_cpl_ratio = np.inf
         self.prev_steps = 0
         self.episode_lengths = []
 
@@ -79,6 +80,7 @@ class EvalPolicyCallback(BaseCallback):
             print('\n-------- Evaluating current policy --------')
             mean_cycle_times = []
             total_rewards = []
+            eval_metrics = {}
             # eval_env may be wrapped (e.g. Monitor in train_DRL.py); gymnasium 1.x
             # wrappers no longer forward attribute lookups, so action_masks()/
             # mean_cycle_time must be read from the underlying gym_env.
@@ -93,21 +95,66 @@ class EvalPolicyCallback(BaseCallback):
 
                 mean_cycle_times.append(raw_env.mean_cycle_time)
                 total_rewards.append(raw_env.mean_cycle_time)
+                for key, value in raw_env.last_episode_info.items():
+                    if key != 'shock':
+                        eval_metrics.setdefault(key, []).append(value)
 
             mean_cycle_time = sum(mean_cycle_times)/len(mean_cycle_times)
             total_reward = sum(total_rewards)/len(total_rewards)
 
-            print(f"Num timesteps: {self.num_timesteps}")
-            print(f"Best mean cycle time: {self.best_mean_cycle_time:.2f} - Last mean cycle time: {mean_cycle_time:.2f}")
+            # TensorBoard: mean resilience metrics over this evaluation round (one
+            # full shock cycle when a cycle_schedule is set). Written at the next
+            # logger dump, i.e. alongside the following rollout's train/ scalars.
+            self.logger.record('eval/mean_cycle_time_hours', mean_cycle_time / 3600)
+            for key, values in eval_metrics.items():
+                self.logger.record(f'eval/{key}', float(np.mean(values)))
 
-            if mean_cycle_time < self.best_mean_cycle_time:
-                self.best_mean_cycle_time = mean_cycle_time
-                # Example for saving best model
+            print(f"Num timesteps: {self.num_timesteps}")
+            # Best-model selection: lowest mean CPL ratio (B_K / CPL_base[e_j], RF2's
+            # objective) when every evaluation episode reports one; otherwise (reward
+            # functions without a CPL_base table) the original lowest mean cycle time.
+            cpl_ratios = eval_metrics.get('cpl_ratio', [])
+            if len(cpl_ratios) == self.nr_evaluations:
+                mean_cpl_ratio = float(np.mean(cpl_ratios))
+                print(f"Best mean CPL ratio: {self.best_mean_cpl_ratio:.4f} - Last mean CPL ratio: {mean_cpl_ratio:.4f}")
+                is_best = mean_cpl_ratio < self.best_mean_cpl_ratio
+                if is_best:
+                    self.best_mean_cpl_ratio = mean_cpl_ratio
+            else:
+                print(f"Best mean cycle time: {self.best_mean_cycle_time:.2f} - Last mean cycle time: {mean_cycle_time:.2f}")
+                is_best = mean_cycle_time < self.best_mean_cycle_time
+                if is_best:
+                    self.best_mean_cycle_time = mean_cycle_time
+
+            if is_best:
                 if self.verbose >= 1:
                     print(f"Saving new best model to {self.save_path}")
                 self.model.save(self.save_path)
             print('---- Finished evaluating current policy ----\n')
-        return True   
+        return True
+
+
+class ResilienceCallback(BaseCallback):
+    """
+    Logs gym_env's episode-end resilience metrics (info['resilience'], see
+    gym_env._resilience_info) to TensorBoard during training, so CPL ratio,
+    recovery and deviation are visible next to the reward. Each metric is
+    averaged over the episodes that ended within one rollout, both across all
+    shocks (resilience/...) and per shock configuration (resilience_<shock>/...),
+    since a cycle of magnitudes would otherwise show up as a sawtooth.
+    """
+    def _on_step(self) -> bool:
+        for info, done in zip(self.locals['infos'], self.locals['dones']):
+            metrics = info.get('resilience') if done else None
+            if not metrics:
+                continue
+            shock_tag = metrics['shock'].replace(':', '_')
+            for key, value in metrics.items():
+                if key == 'shock':
+                    continue
+                self.logger.record_mean(f'resilience/{key}', value)
+                self.logger.record_mean(f'resilience_{shock_tag}/{key}', value)
+        return True
 
 
 def custom_schedule(initial_value: float) -> Callable[[float], float]:

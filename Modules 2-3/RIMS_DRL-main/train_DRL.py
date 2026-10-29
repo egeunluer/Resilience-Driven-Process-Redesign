@@ -21,7 +21,7 @@ from stable_baselines3.common.logger import configure
 
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
-from callbacks import SaveOnBestTrainingRewardCallback, EvalPolicyCallback
+from callbacks import SaveOnBestTrainingRewardCallback, EvalPolicyCallback, ResilienceCallback
 from callbacks import custom_schedule, linear_schedule
 
 
@@ -211,9 +211,21 @@ if __name__ == '__main__':
     n_steps = n_steps.get(NAME_LOG, 5120)  # fallback for datasets not in table
 
     # Create log dir — include shock flag so runs are distinguishable (D5).
+    # RIMS_LOG_ROOT: where run folders go (TensorBoard events, progress.csv, models).
+    # Defaults to tmp_training_2/; on Colab, point it at Google Drive so logs and
+    # checkpoints survive a runtime disconnect. RIMS_RUN_TAG: optional suffix so
+    # repeated runs of the same configuration get separate folders (and separate
+    # TensorBoard curves) instead of appending into one.
     shock_tag = 'S1' if shock_config is not None else 'S0'
-    log_dir = f"tmp_training_2/{NAME_LOG}_{N_TRACES}_C{CALENDAR}_T{threshold}_PFalse_{reward_function}_{shock_tag}/"
+    log_root = os.environ.get('RIMS_LOG_ROOT', 'tmp_training_2')
+    run_name = f"{NAME_LOG}_{N_TRACES}_C{CALENDAR}_T{threshold}_PFalse_{reward_function}_{shock_tag}"
+    if reward_function == 'RF2':
+        run_name += f"_eps{rf2_epsilon:g}"
+    if os.environ.get('RIMS_RUN_TAG'):
+        run_name += f"_{os.environ['RIMS_RUN_TAG']}"
+    log_dir = os.path.join(log_root, run_name) + '/'
     os.makedirs(log_dir, exist_ok=True)
+    print(f"Logging to {log_dir}", flush=True)
 
     # ---------------------------------------------------------------------------
     # Fixed calibration constants (P*, per-shock CPL_base table, phi_fix): loaded
@@ -344,8 +356,8 @@ if __name__ == '__main__':
     gamma = 0.999 if reward_function == 'inverse_CT' else 1
     model = MaskablePPO(CustomPolicy, env_simulator, clip_range=0.2, learning_rate=linear_schedule(3e-4), n_steps=int(n_steps), batch_size=256, gamma=gamma, verbose=1)
 
-    # Logging to tensorboard.
-    # tensorboard --logdir ./tmp_training_2/
+    # Logging to tensorboard (train/, rollout/, resilience/, eval/ scalars).
+    # tensorboard --logdir ./tmp_training_2/   (or $RIMS_LOG_ROOT; on Colab: %tensorboard --logdir ...)
     model.set_logger(configure(log_dir, ["stdout", "csv", "tensorboard"]))
 
     # Eval env shares the same shock_config, pool, and P* so evaluation episodes
@@ -376,6 +388,7 @@ if __name__ == '__main__':
     eval_callback = EvalPolicyCallback(check_freq=5*int(n_steps), nr_evaluations=nr_evaluations, log_dir=log_dir, eval_env=eval_env)
 
     callback = SaveOnBestTrainingRewardCallback(check_freq=1000, log_dir=log_dir)
-    model.learn(total_timesteps=int(time_steps), callback=eval_callback)
+    # ResilienceCallback: per-episode CPL ratio / recovery / deviation to TensorBoard.
+    model.learn(total_timesteps=int(time_steps), callback=CallbackList([eval_callback, ResilienceCallback()]))
 
     model.save(f'{log_dir}/model_final')
