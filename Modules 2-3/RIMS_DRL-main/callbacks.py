@@ -1,4 +1,5 @@
 import os
+import json
 
 import gymnasium as gym
 import numpy as np
@@ -58,7 +59,7 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
         return True
 
 class EvalPolicyCallback(BaseCallback):
-    def __init__(self, check_freq: int, nr_evaluations: int, log_dir: str, eval_env, model_name: str = 'best_model', verbose: int = 1):
+    def __init__(self, check_freq: int, nr_evaluations: int, log_dir: str, eval_env, model_name: str = 'best_model', verbose: int = 1, resume: bool = False):
         super(EvalPolicyCallback, self).__init__(verbose)
         self.check_freq = check_freq
         self.nr_evaluations = nr_evaluations
@@ -69,6 +70,18 @@ class EvalPolicyCallback(BaseCallback):
         self.best_mean_cpl_ratio = np.inf
         self.prev_steps = 0
         self.episode_lengths = []
+        # Best score so far, persisted next to best_model.zip. On a resumed run it
+        # is read back, so the first evaluation after resuming can't overwrite a
+        # better best_model just because the in-memory best started at infinity.
+        # Ignored on a fresh run, so a leftover file from an earlier run in the
+        # same folder never carries over.
+        self.best_score_path = os.path.join(log_dir, 'best_model_score.json')
+        if resume and os.path.exists(self.best_score_path):
+            with open(self.best_score_path) as f:
+                best = json.load(f)
+            self.best_mean_cpl_ratio = best.get('best_mean_cpl_ratio', np.inf)
+            self.best_mean_cycle_time = best.get('best_mean_cycle_time', np.inf)
+            print(f"Resumed best-model score from {self.best_score_path}: {best}", flush=True)
 
     def _init_callback(self) -> None:
         # Create folder if needed
@@ -130,7 +143,35 @@ class EvalPolicyCallback(BaseCallback):
                 if self.verbose >= 1:
                     print(f"Saving new best model to {self.save_path}")
                 self.model.save(self.save_path)
+                with open(self.best_score_path, 'w') as f:
+                    json.dump({'best_mean_cpl_ratio': self.best_mean_cpl_ratio,
+                               'best_mean_cycle_time': self.best_mean_cycle_time,
+                               'num_timesteps': self.num_timesteps}, f, indent=2)
             print('---- Finished evaluating current policy ----\n')
+        return True
+
+
+class LatestCheckpointCallback(BaseCallback):
+    """
+    Saves the current model (policy + optimizer state + num_timesteps) to
+    <log_dir>/latest_model.zip every `save_freq` steps, overwriting the previous
+    one, so a run interrupted mid-way (e.g. a Colab disconnect) can continue from
+    its latest state via train_DRL.py's RIMS_RESUME, not only from best_model.
+    Written to a temporary file first and then renamed, so an interruption during
+    the save itself can't leave a half-written latest_model.zip behind.
+    """
+    def __init__(self, save_freq: int, log_dir: str, verbose: int = 1):
+        super().__init__(verbose)
+        self.save_freq = save_freq
+        self.path = os.path.join(log_dir, 'latest_model.zip')
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self.save_freq == 0:
+            tmp = self.path[:-len('.zip')] + '_tmp.zip'
+            self.model.save(tmp)
+            os.replace(tmp, self.path)
+            if self.verbose >= 1:
+                print(f"Checkpoint: saved latest model at {self.num_timesteps} steps to {self.path}", flush=True)
         return True
 
 

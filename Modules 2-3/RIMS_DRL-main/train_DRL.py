@@ -21,7 +21,7 @@ from stable_baselines3.common.logger import configure
 
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
-from callbacks import SaveOnBestTrainingRewardCallback, EvalPolicyCallback, ResilienceCallback
+from callbacks import SaveOnBestTrainingRewardCallback, EvalPolicyCallback, ResilienceCallback, LatestCheckpointCallback
 from callbacks import custom_schedule, linear_schedule
 
 
@@ -199,7 +199,9 @@ shock_config = ShockConfig(
 if __name__ == '__main__':
     load_model = False
     postpone_penalty = 0
-    time_steps = 10240000
+    # Total training length; RIMS_TIME_STEPS overrides it without editing this file
+    # (e.g. on Colab: os.environ['RIMS_TIME_STEPS'] = '2560000').
+    time_steps = int(os.environ.get('RIMS_TIME_STEPS', 10240000))
     n_steps = {
         "BPI_Challenge_2012_W_Two_TS": 10240,
         "confidential_1000":           5120,
@@ -354,9 +356,32 @@ if __name__ == '__main__':
     # gamma=1 for RF1/RF2 (RF2_reward_function.md SS6: the episode return is then
     # exactly the signed phi(t)-area the reward is built from).
     gamma = 0.999 if reward_function == 'inverse_CT' else 1
-    model = MaskablePPO(CustomPolicy, env_simulator, clip_range=0.2, learning_rate=linear_schedule(3e-4), n_steps=int(n_steps), batch_size=256, gamma=gamma, verbose=1)
+    # Resume (RIMS_RESUME=1): continue the run in this same log_dir (same config
+    # and RIMS_RUN_TAG) from latest_model.zip -- policy, optimizer state and
+    # num_timesteps, so the step count and the linear learning-rate schedule
+    # carry on where they stopped instead of restarting. Fails loudly if there
+    # is nothing to resume from.
+    resume = os.environ.get('RIMS_RESUME', '0') == '1'
+    latest_path = os.path.join(log_dir, 'latest_model.zip')
+    if resume:
+        if not os.path.exists(latest_path):
+            raise FileNotFoundError(
+                f"RIMS_RESUME=1 but {latest_path} doesn't exist. Check that RIMS_LOG_ROOT and "
+                f"RIMS_RUN_TAG match the interrupted run, or unset RIMS_RESUME to start fresh."
+            )
+        model = MaskablePPO.load(latest_path, env=env_simulator)
+        print(f"Resuming from {latest_path} at {model.num_timesteps} of {time_steps} steps", flush=True)
+        # SB3's CSV logger (and the eval Monitor below) open their files in write
+        # mode -- keep the interrupted segment's files instead of overwriting them.
+        for name in ('progress.csv', 'monitor.csv'):
+            if os.path.exists(os.path.join(log_dir, name)):
+                os.replace(os.path.join(log_dir, name),
+                           os.path.join(log_dir, f"{name[:-4]}_upto{model.num_timesteps}.csv"))
+    else:
+        model = MaskablePPO(CustomPolicy, env_simulator, clip_range=0.2, learning_rate=linear_schedule(3e-4), n_steps=int(n_steps), batch_size=256, gamma=gamma, verbose=1)
 
-    # Logging to tensorboard (train/, rollout/, resilience/, eval/ scalars).
+    # Logging to tensorboard (train/, rollout/, resilience/, eval/ scalars). A resumed
+    # run writes a new event file into the same folder, continuing at its step count.
     # tensorboard --logdir ./tmp_training_2/   (or $RIMS_LOG_ROOT; on Colab: %tensorboard --logdir ...)
     model.set_logger(configure(log_dir, ["stdout", "csv", "tensorboard"]))
 
@@ -385,10 +410,20 @@ if __name__ == '__main__':
     # and "best model" comparisons across rounds stay like-for-like.
     if shock_config is not None and shock_config.cycle_schedule:
         nr_evaluations = len(shock_config.cycle_schedule)
-    eval_callback = EvalPolicyCallback(check_freq=5*int(n_steps), nr_evaluations=nr_evaluations, log_dir=log_dir, eval_env=eval_env)
+    eval_callback = EvalPolicyCallback(check_freq=5*int(n_steps), nr_evaluations=nr_evaluations, log_dir=log_dir, eval_env=eval_env, resume=resume)
 
     callback = SaveOnBestTrainingRewardCallback(check_freq=1000, log_dir=log_dir)
     # ResilienceCallback: per-episode CPL ratio / recovery / deviation to TensorBoard.
-    model.learn(total_timesteps=int(time_steps), callback=CallbackList([eval_callback, ResilienceCallback()]))
+    # LatestCheckpointCallback: latest_model.zip every 10 PPO updates (51,200 steps
+    # for Consulta), the point RIMS_RESUME continues from.
+    callbacks = CallbackList([eval_callback, ResilienceCallback(),
+                              LatestCheckpointCallback(save_freq=10*int(n_steps), log_dir=log_dir)])
+    # On resume, learn() adds the already-done steps back onto total_timesteps
+    # (reset_num_timesteps=False), so pass only what's left.
+    remaining = int(time_steps) - (model.num_timesteps if resume else 0)
+    if remaining > 0:
+        model.learn(total_timesteps=remaining, callback=callbacks, reset_num_timesteps=not resume)
+    else:
+        print(f"Nothing left to train: already at {model.num_timesteps} >= {time_steps} steps.", flush=True)
 
     model.save(f'{log_dir}/model_final')
