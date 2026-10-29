@@ -21,11 +21,16 @@
 #   - torch is pulled in automatically by stable-baselines3/sb3-contrib. Don't
 #     pin it separately here -- on Colab, an unpinned install lets pip reuse the
 #     GPU-linked torch build Colab ships with, rather than replacing it.
+#   - pulp is pinned below 4 because pm4py imports it whenever it is installed
+#     (Colab ships it preinstalled), and pulp 4.x's rewrite no longer exports
+#     LpStatus, which pm4py 2.7.22.2 imports at load time:
+#     "ImportError: cannot import name 'LpStatus' from 'pulp'".
 
 gymnasium==1.2.3
 stable-baselines3==2.8.0
 sb3-contrib==2.8.0
 pm4py==2.7.22.2
+pulp==3.3.2
 simpy==4.1.2
 numpy==2.3.4
 pandas==2.3.3
