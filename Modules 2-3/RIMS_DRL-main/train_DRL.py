@@ -440,13 +440,19 @@ if __name__ == '__main__':
     )
     eval_env = Monitor(eval_env, log_dir)
     nr_evaluations = 10 if NAME_LOG != 'BPI_Challenge_2017_W_Two_TS' else 3
-    # With a shock cycle, evaluate exactly one full cycle per evaluation round:
-    # eval_env's own cursor then wraps back to the same starting point every
-    # round, so every round scores the policy on the identical set of shocks
-    # and "best model" comparisons across rounds stay like-for-like.
+    # With a shock cycle, evaluate exactly two full cycles per evaluation round
+    # (the callback restarts eval_env's cursor each round), so every round scores
+    # the policy on the identical set of shocks and "best model" comparisons
+    # across rounds stay like-for-like.
     if shock_config is not None and shock_config.cycle_schedule:
-        nr_evaluations = len(shock_config.cycle_schedule)
-    eval_callback = EvalPolicyCallback(check_freq=5*int(n_steps), nr_evaluations=nr_evaluations, log_dir=log_dir, eval_env=eval_env, resume=resume)
+        nr_evaluations = 2 * len(shock_config.cycle_schedule)
+    # Fixed per-episode seeds + deterministic policy: every round evaluates on the
+    # identical episodes (two full shock cycles), so best_model is chosen by policy
+    # quality rather than by which round happened to get easier arrivals. Seeds
+    # 1000+ don't overlap the calibration's (0-15) or the benchmarks' (100-215).
+    eval_seeds = [1000 + i for i in range(nr_evaluations)]
+    eval_callback = EvalPolicyCallback(check_freq=5*int(n_steps), nr_evaluations=nr_evaluations, log_dir=log_dir, eval_env=eval_env, resume=resume,
+                                       eval_seeds=eval_seeds, deterministic=True)
 
     callback = SaveOnBestTrainingRewardCallback(check_freq=1000, log_dir=log_dir)
     # ResilienceCallback: per-episode CPL ratio / recovery / deviation to TensorBoard.

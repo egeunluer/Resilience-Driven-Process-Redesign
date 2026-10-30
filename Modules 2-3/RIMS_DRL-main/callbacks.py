@@ -1,5 +1,6 @@
 import os
 import json
+import random
 
 import gymnasium as gym
 import numpy as np
@@ -59,10 +60,19 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
         return True
 
 class EvalPolicyCallback(BaseCallback):
-    def __init__(self, check_freq: int, nr_evaluations: int, log_dir: str, eval_env, model_name: str = 'best_model', verbose: int = 1, resume: bool = False):
+    def __init__(self, check_freq: int, nr_evaluations: int, log_dir: str, eval_env, model_name: str = 'best_model', verbose: int = 1, resume: bool = False,
+                 eval_seeds=None, deterministic: bool = False):
         super(EvalPolicyCallback, self).__init__(verbose)
         self.check_freq = check_freq
         self.nr_evaluations = nr_evaluations
+        # eval_seeds: one fixed seed per evaluation episode (len == nr_evaluations), so
+        # every round scores the policy on identical arrivals/routing and differences
+        # between rounds reflect the policy, not luck. None = unseeded (old behaviour).
+        # deterministic: evaluate the policy's most likely action instead of sampling.
+        if eval_seeds is not None and len(eval_seeds) != nr_evaluations:
+            raise ValueError(f"eval_seeds has {len(eval_seeds)} entries, nr_evaluations is {nr_evaluations}")
+        self.eval_seeds = eval_seeds
+        self.deterministic = deterministic
         self.log_dir = log_dir
         self.eval_env = eval_env
         self.save_path = os.path.join(log_dir, model_name)
@@ -88,32 +98,49 @@ class EvalPolicyCallback(BaseCallback):
         if self.save_path is not None:
             os.makedirs(self.save_path, exist_ok=True)
 
-    def _on_step(self) -> bool:
-        if (self.n_calls - 1) % self.check_freq == 0 and self.n_calls > 1: # After model update
-            print('\n-------- Evaluating current policy --------')
-            mean_cycle_times = []
-            total_rewards = []
-            eval_metrics = {}
-            # eval_env may be wrapped (e.g. Monitor in train_DRL.py); gymnasium 1.x
-            # wrappers no longer forward attribute lookups, so action_masks()/
-            # mean_cycle_time must be read from the underlying gym_env.
-            raw_env = self.eval_env.unwrapped
+    def evaluate(self, model):
+        """Run one evaluation round of nr_evaluations episodes with `model`.
+        Returns (per-episode mean cycle times, {metric: per-episode values})."""
+        mean_cycle_times = []
+        eval_metrics = {}
+        # eval_env may be wrapped (e.g. Monitor in train_DRL.py); gymnasium 1.x
+        # wrappers no longer forward attribute lookups, so action_masks()/
+        # mean_cycle_time must be read from the underlying gym_env.
+        raw_env = self.eval_env.unwrapped
+        # Seeding an episode re-seeds Python's and NumPy's global RNGs, which the
+        # training env draws from too: without restoring them, every training episode
+        # right after an evaluation round would start from the same random state.
+        rng_state = (random.getstate(), np.random.get_state())
+        # Restart the shock cycle every round, so episode j always gets the same
+        # shock (and, with eval_seeds, the same seed) -- also after a resume.
+        if hasattr(raw_env, 'shock_cycle_index'):
+            raw_env.shock_cycle_index = 0
+        try:
             for epoch in range(self.nr_evaluations):
-                state, _ = self.eval_env.reset()
+                seed = self.eval_seeds[epoch] if self.eval_seeds is not None else None
+                state, _ = self.eval_env.reset(seed=seed)
                 isTerminated = False
 
                 while isTerminated == False:
-                    action, _state = self.model.predict(state, action_masks=raw_env.action_masks())
+                    action, _state = model.predict(state, action_masks=raw_env.action_masks(),
+                                                   deterministic=self.deterministic)
                     state, reward, isTerminated, _, _ = self.eval_env.step(action)
 
                 mean_cycle_times.append(raw_env.mean_cycle_time)
-                total_rewards.append(raw_env.mean_cycle_time)
                 for key, value in raw_env.last_episode_info.items():
                     if key != 'shock':
                         eval_metrics.setdefault(key, []).append(value)
+        finally:
+            random.setstate(rng_state[0])
+            np.random.set_state(rng_state[1])
+        return mean_cycle_times, eval_metrics
+
+    def _on_step(self) -> bool:
+        if (self.n_calls - 1) % self.check_freq == 0 and self.n_calls > 1: # After model update
+            print('\n-------- Evaluating current policy --------')
+            mean_cycle_times, eval_metrics = self.evaluate(self.model)
 
             mean_cycle_time = sum(mean_cycle_times)/len(mean_cycle_times)
-            total_reward = sum(total_rewards)/len(total_rewards)
 
             # TensorBoard: mean resilience metrics over this evaluation round (one
             # full shock cycle when a cycle_schedule is set). Written at the next
