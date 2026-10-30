@@ -1,0 +1,350 @@
+{
+  "resource_tier_map": {
+    "241": {
+      "Evaluacion curso": 2,
+      "Revisar curso": 0,
+      "Validar solicitud": 1,
+      "Cancelar Solicitud": 1
+    },
+    "3445": {
+      "Evaluacion curso": 2,
+      "Homologacion por grupo de cursos": 1,
+      "Visto Bueno Cierre Proceso": 1
+    },
+    "15930": {
+      "Evaluacion curso": 2,
+      "Homologacion por grupo de cursos": 0,
+      "Visto Bueno Cierre Proceso": 0
+    },
+    "1707": {
+      "Evaluacion curso": 1,
+      "Revisar curso": 1,
+      "Validar solicitud": 1,
+      "Cancelar Solicitud": 2,
+      "Homologacion por grupo de cursos": 0,
+      "Validacion final": 1
+    },
+    "294": {
+      "Evaluacion curso": 1,
+      "Validar solicitud": 0,
+      "Cancelar Solicitud": 0
+    },
+    "659": {
+      "Evaluacion curso": 1,
+      "Revisar curso": 2,
+      "Validar solicitud": 2,
+      "Cancelar Solicitud": 0
+    },
+    "677": {
+      "Evaluacion curso": 1,
+      "Validar solicitud": 1,
+      "Cancelar Solicitud": 1,
+      "Homologacion por grupo de cursos": 2,
+      "Validacion final": 0,
+      "Validar solicitud / pre-homologacion": 1
+    },
+    "19019": {
+      "Evaluacion curso": 0,
+      "Revisar curso": 1,
+      "Validar solicitud": 2,
+      "Cancelar Solicitud": 2,
+      "Homologacion por grupo de cursos": 1,
+      "Validacion final": 0,
+      "Validar solicitud / pre-homologacion": 0
+    },
+    "22404": {
+      "Evaluacion curso": 0,
+      "Validar solicitud": 2,
+      "Cancelar Solicitud": 1,
+      "Homologacion por grupo de cursos": 1,
+      "Validacion final": 2
+    },
+    "49": {
+      "Evaluacion curso": 0,
+      "Revisar curso": 2,
+      "Validar solicitud": 1
+    },
+    "22491": {
+      "Evaluacion curso": 0,
+      "Cancelar Solicitud": 0,
+      "Homologacion por grupo de cursos": 0
+    },
+    "186": {
+      "Revisar curso": 0,
+      "Validar solicitud": 0,
+      "Cancelar Solicitud": 0,
+      "Homologacion por grupo de cursos": 2
+    },
+    "22475": {
+      "Validar solicitud": 2,
+      "Cancelar Solicitud": 2,
+      "Homologacion por grupo de cursos": 2,
+      "Validacion final": 1,
+      "Validar solicitud / pre-homologacion": 2
+    },
+    "18929": {
+      "Validar solicitud": 0,
+      "Cancelar Solicitud": 1,
+      "Homologacion por grupo de cursos": 0,
+      "Validacion final": 2
+    },
+    "1646": {
+      "Validar solicitud": 0,
+      "Validacion final": 0,
+      "Validar solicitud / pre-homologacion": 0
+    },
+    "157": {
+      "Recepcion de documentos": 1
+    },
+    "26789": {
+      "Recepcion de documentos": 0,
+      "Avanzar recepcion documentos": 0
+    }
+  },
+  "activity_tiers": {
+    "Evaluacion curso": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "19019",
+          "22404",
+          "22491",
+          "49"
+        ],
+        "mean_processing_time_s": 10859.625
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "1707",
+          "294",
+          "659",
+          "677"
+        ],
+        "mean_processing_time_s": 1963.375
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "15930",
+          "241",
+          "3445"
+        ],
+        "mean_processing_time_s": 893.5
+      }
+    },
+    "Revisar curso": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "186",
+          "241"
+        ],
+        "mean_processing_time_s": 7684.25
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "1707",
+          "19019"
+        ],
+        "mean_processing_time_s": 3249.0
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "49",
+          "659"
+        ],
+        "mean_processing_time_s": 299.75
+      }
+    },
+    "Validar solicitud": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "1646",
+          "186",
+          "18929",
+          "294"
+        ],
+        "mean_processing_time_s": 4122.125
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "1707",
+          "241",
+          "49",
+          "677"
+        ],
+        "mean_processing_time_s": 1646.0
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "19019",
+          "22404",
+          "22475",
+          "659"
+        ],
+        "mean_processing_time_s": 402.5
+      }
+    },
+    "Recepcion de documentos": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "26789"
+        ],
+        "mean_processing_time_s": 18996.0
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "157"
+        ],
+        "mean_processing_time_s": 13373.0
+      }
+    },
+    "Cancelar Solicitud": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "186",
+          "22491",
+          "294",
+          "659"
+        ],
+        "mean_processing_time_s": 16451.0
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "18929",
+          "22404",
+          "241",
+          "677"
+        ],
+        "mean_processing_time_s": 2585.375
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "1707",
+          "19019",
+          "22475"
+        ],
+        "mean_processing_time_s": 372.8333333333333
+      }
+    },
+    "Homologacion por grupo de cursos": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "15930",
+          "1707",
+          "18929",
+          "22491"
+        ],
+        "mean_processing_time_s": 12277.5
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "19019",
+          "22404",
+          "3445"
+        ],
+        "mean_processing_time_s": 2933.6666666666665
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "186",
+          "22475",
+          "677"
+        ],
+        "mean_processing_time_s": 1318.1666666666667
+      }
+    },
+    "Validacion final": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "1646",
+          "19019",
+          "677"
+        ],
+        "mean_processing_time_s": 2294.8333333333335
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "1707",
+          "22475"
+        ],
+        "mean_processing_time_s": 269.75
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "18929",
+          "22404"
+        ],
+        "mean_processing_time_s": 177.5
+      }
+    },
+    "Validar solicitud / pre-homologacion": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "1646",
+          "19019"
+        ],
+        "mean_processing_time_s": 4900.0
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "677"
+        ],
+        "mean_processing_time_s": 252.0
+      },
+      "2": {
+        "label": "fast",
+        "members": [
+          "22475"
+        ],
+        "mean_processing_time_s": 147.0
+      }
+    },
+    "Visto Bueno Cierre Proceso": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "15930"
+        ],
+        "mean_processing_time_s": 928.0
+      },
+      "1": {
+        "label": "mid",
+        "members": [
+          "3445"
+        ],
+        "mean_processing_time_s": 466.0
+      }
+    },
+    "Avanzar recepcion documentos": {
+      "0": {
+        "label": "slow",
+        "members": [
+          "26789"
+        ],
+        "mean_processing_time_s": 8228.0
+      }
+    }
+  },
+  "n_tiers": 3,
+  "note": "Tiers recomputed via empirical_preprocessing.compute_tiers(), scoped ONLY to the 17 real resources in consulta_measured60_min3activities_plus157_pool.json (processing times with durations <= 60 s treated as unmeasured). Not consumed by gym_env's pool_override_path mechanism -- gym_env.py keeps resource_tier_map from --artifact regardless of --pool. Standalone artifact for Module 4 / reporting."
+}

@@ -514,6 +514,8 @@ def run(
     p_star: float | None = None,
     normalization_cycle_time: float = 10000.0,
     ppi_window_n: int = 20,
+    min_measured_pt: float = 0.0,
+    placeholder_pt_overrides: dict[str, float] | None = None,
 ) -> dict:
     df, has_true_pt_long, has_true_pt_wide = load_and_prepare(
         log_path, activity_prefix, activity_merge_map
@@ -535,6 +537,25 @@ def run(
         mode = "sojourn_approximation"
         records, excluded_stage1 = _compute_sojourn_pt(df)
     log.info(f"  Raw (resource, activity, pt) records: {len(records)}")
+
+    # Durations at or below min_measured_pt don't count as measured work time. In
+    # Consulta, many events are logged as 1-2 s "ticks" (a status update, not the
+    # work itself); once the 0 s events are dropped above, a pair's median could
+    # rest entirely on those ticks (e.g. a resource 'doing' Revisar curso in 1 s),
+    # creating resources that look orders of magnitude faster than they are.
+    # Excluded like the 0 s ones, so a pair left with < n_min measured events loses
+    # eligibility in aggregate(). Only meaningful for true processing times.
+    if min_measured_pt > 0 and mode in ("true", "true_wide"):
+        ticks = records[records["pt"] <= min_measured_pt]
+        for _, row in ticks.iterrows():
+            excluded_stage1.append({
+                "resource": row["resource"],
+                "activity": row["activity"],
+                "reason": f"pt_at_or_below_min_measured_{min_measured_pt:g}s",
+            })
+        records = records[records["pt"] > min_measured_pt]
+        log.info(f"  Dropped {len(ticks)} records with pt <= {min_measured_pt:g}s "
+                 f"(not measured work time); {len(records)} remain")
 
     if excluded_stage1:
         log.warning(f"  Stage-1 exclusions (zero/negative/unmatched): {len(excluded_stage1)}")
@@ -577,6 +598,16 @@ def run(
             f"{len(at_risk)} at-risk activities (pt={placeholder_pt:.0f}s, dataset median)"
         )
 
+    # Per-activity placeholder durations, for at-risk activities the dataset median
+    # misrepresents -- e.g. a step that is near-instant in the log (Consulta's
+    # 'Transferir creditos homologables': 82% of events 0 s, the rest ~1 s).
+    for activity, pt in (placeholder_pt_overrides or {}).items():
+        if activity not in at_risk:
+            raise ValueError(f"--placeholder-pt given for '{activity}', which is not an at-risk "
+                             f"(placeholder) activity: {at_risk}")
+        resource_pt[PLACEHOLDER_RESOURCE][activity] = float(pt)
+        log.info(f"Placeholder pt for '{activity}' set to {pt:g}s (override)")
+
     artifact = {
         "activity_tiers": activity_tiers,
         "resource_tier_map": resource_tier_map,
@@ -600,6 +631,8 @@ def run(
             "activity_prefix_filter": activity_prefix,
             "activity_merge_map": activity_merge_map,
             "exclude_activities": exclude_activities,
+            "min_measured_pt": min_measured_pt,
+            "placeholder_pt_overrides": placeholder_pt_overrides,
             "log_path": str(log_path),
         },
         "summary": {
@@ -682,7 +715,26 @@ if __name__ == "__main__":
         default=20,
         help="Rolling window size (in completed traces) for the runtime PPI phi(t)",
     )
+    parser.add_argument(
+        "--min-measured-pt",
+        type=float,
+        default=0.0,
+        help="Durations (s) at or below this are treated as not measured and excluded, "
+             "like 0 s ones (true processing-time modes only). 0 = only 0 s excluded",
+    )
+    parser.add_argument(
+        "--placeholder-pt",
+        nargs="+",
+        default=None,
+        metavar="ACTIVITY=SECONDS",
+        help="Duration for specific placeholder (at-risk) activities instead of the "
+             "dataset median, e.g. --placeholder-pt 'Transferir creditos homologables=1'",
+    )
     args = parser.parse_args()
+
+    placeholder_pt_overrides = None
+    if args.placeholder_pt:
+        placeholder_pt_overrides = {a: float(v) for a, v in (pair.rsplit("=", 1) for pair in args.placeholder_pt)}
 
     activity_merge_map = None
     if args.merge_activities:
@@ -701,6 +753,8 @@ if __name__ == "__main__":
             p_star=args.p_star,
             normalization_cycle_time=args.normalization_cycle_time,
             ppi_window_n=args.ppi_window_n,
+            min_measured_pt=args.min_measured_pt,
+            placeholder_pt_overrides=placeholder_pt_overrides,
         )
     except Exception as e:
         log.error(str(e))

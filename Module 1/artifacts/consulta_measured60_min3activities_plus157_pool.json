@@ -1,0 +1,224 @@
+{
+  "curated_pt": {
+    "49": {
+      "Evaluacion curso": 9192.0,
+      "Revisar curso": 369.5,
+      "Validar solicitud": 1413.0
+    },
+    "157": {
+      "Recepcion de documentos": 13373.0
+    },
+    "186": {
+      "Cancelar Solicitud": 5668.5,
+      "Homologacion por grupo de cursos": 938.0,
+      "Revisar curso": 10076.0,
+      "Validar solicitud": 4551.5
+    },
+    "241": {
+      "Cancelar Solicitud": 2311.0,
+      "Evaluacion curso": 425.0,
+      "Revisar curso": 5292.5,
+      "Validar solicitud": 2291.0
+    },
+    "294": {
+      "Cancelar Solicitud": 5438.5,
+      "Evaluacion curso": 1831.5,
+      "Validar solicitud": 3226.5
+    },
+    "659": {
+      "Cancelar Solicitud": 28740.0,
+      "Evaluacion curso": 2164.0,
+      "Revisar curso": 230.0,
+      "Validar solicitud": 142.0
+    },
+    "677": {
+      "Cancelar Solicitud": 570.0,
+      "Evaluacion curso": 2471.0,
+      "Homologacion por grupo de cursos": 986.0,
+      "Validacion final": 329.0,
+      "Validar solicitud": 960.0,
+      "Validar solicitud / pre-homologacion": 252.0
+    },
+    "1646": {
+      "Validacion final": 6014.5,
+      "Validar solicitud": 5950.5,
+      "Validar solicitud / pre-homologacion": 9460.0
+    },
+    "1707": {
+      "Cancelar Solicitud": 474.0,
+      "Evaluacion curso": 1387.0,
+      "Homologacion por grupo de cursos": 3660.5,
+      "Revisar curso": 5252.0,
+      "Validacion final": 299.5,
+      "Validar solicitud": 1920.0
+    },
+    "3445": {
+      "Evaluacion curso": 869.0,
+      "Homologacion por grupo de cursos": 2893.0,
+      "Visto Bueno Cierre Proceso": 466.0
+    },
+    "15930": {
+      "Evaluacion curso": 1386.5,
+      "Homologacion por grupo de cursos": 8004.5,
+      "Visto Bueno Cierre Proceso": 928.0
+    },
+    "18929": {
+      "Cancelar Solicitud": 5139.5,
+      "Homologacion por grupo de cursos": 9605.0,
+      "Validacion final": 132.0,
+      "Validar solicitud": 2760.0
+    },
+    "19019": {
+      "Cancelar Solicitud": 415.0,
+      "Evaluacion curso": 6281.5,
+      "Homologacion por grupo de cursos": 3502.0,
+      "Revisar curso": 1246.0,
+      "Validacion final": 541.0,
+      "Validar solicitud": 359.0,
+      "Validar solicitud / pre-homologacion": 340.0
+    },
+    "22404": {
+      "Cancelar Solicitud": 2321.0,
+      "Evaluacion curso": 7085.0,
+      "Homologacion por grupo de cursos": 2406.0,
+      "Validacion final": 223.0,
+      "Validar solicitud": 956.0
+    },
+    "22475": {
+      "Cancelar Solicitud": 229.5,
+      "Homologacion por grupo de cursos": 2030.5,
+      "Validacion final": 240.0,
+      "Validar solicitud": 153.0,
+      "Validar solicitud / pre-homologacion": 147.0
+    },
+    "22491": {
+      "Cancelar Solicitud": 25957.0,
+      "Evaluacion curso": 20880.0,
+      "Homologacion por grupo de cursos": 27840.0
+    },
+    "26789": {
+      "Avanzar recepcion documentos": 8228.0,
+      "Recepcion de documentos": 18996.0
+    },
+    "__NO_RESOURCE__": {
+      "Cancelar curso": 1.0,
+      "End": 1.0,
+      "Notificacion estudiante cancelacion soli": 1.0,
+      "Start": 1.0,
+      "Submit Request": 1.0,
+      "Transferir Creditos": 1.0,
+      "Transferir creditos homologables": 1.0
+    }
+  },
+  "resource_to_activities": {
+    "49": [
+      "Evaluacion curso",
+      "Revisar curso",
+      "Validar solicitud"
+    ],
+    "157": [
+      "Recepcion de documentos"
+    ],
+    "186": [
+      "Cancelar Solicitud",
+      "Homologacion por grupo de cursos",
+      "Revisar curso",
+      "Validar solicitud"
+    ],
+    "241": [
+      "Cancelar Solicitud",
+      "Evaluacion curso",
+      "Revisar curso",
+      "Validar solicitud"
+    ],
+    "294": [
+      "Cancelar Solicitud",
+      "Evaluacion curso",
+      "Validar solicitud"
+    ],
+    "659": [
+      "Cancelar Solicitud",
+      "Evaluacion curso",
+      "Revisar curso",
+      "Validar solicitud"
+    ],
+    "677": [
+      "Cancelar Solicitud",
+      "Evaluacion curso",
+      "Homologacion por grupo de cursos",
+      "Validacion final",
+      "Validar solicitud",
+      "Validar solicitud / pre-homologacion"
+    ],
+    "1646": [
+      "Validacion final",
+      "Validar solicitud",
+      "Validar solicitud / pre-homologacion"
+    ],
+    "1707": [
+      "Cancelar Solicitud",
+      "Evaluacion curso",
+      "Homologacion por grupo de cursos",
+      "Revisar curso",
+      "Validacion final",
+      "Validar solicitud"
+    ],
+    "3445": [
+      "Evaluacion curso",
+      "Homologacion por grupo de cursos",
+      "Visto Bueno Cierre Proceso"
+    ],
+    "15930": [
+      "Evaluacion curso",
+      "Homologacion por grupo de cursos",
+      "Visto Bueno Cierre Proceso"
+    ],
+    "18929": [
+      "Cancelar Solicitud",
+      "Homologacion por grupo de cursos",
+      "Validacion final",
+      "Validar solicitud"
+    ],
+    "19019": [
+      "Cancelar Solicitud",
+      "Evaluacion curso",
+      "Homologacion por grupo de cursos",
+      "Revisar curso",
+      "Validacion final",
+      "Validar solicitud",
+      "Validar solicitud / pre-homologacion"
+    ],
+    "22404": [
+      "Cancelar Solicitud",
+      "Evaluacion curso",
+      "Homologacion por grupo de cursos",
+      "Validacion final",
+      "Validar solicitud"
+    ],
+    "22475": [
+      "Cancelar Solicitud",
+      "Homologacion por grupo de cursos",
+      "Validacion final",
+      "Validar solicitud",
+      "Validar solicitud / pre-homologacion"
+    ],
+    "22491": [
+      "Cancelar Solicitud",
+      "Evaluacion curso",
+      "Homologacion por grupo de cursos"
+    ],
+    "26789": [
+      "Avanzar recepcion documentos",
+      "Recepcion de documentos"
+    ],
+    "__NO_RESOURCE__": [
+      "Cancelar curso",
+      "End",
+      "Notificacion estudiante cancelacion soli",
+      "Start",
+      "Submit Request",
+      "Transferir Creditos",
+      "Transferir creditos homologables"
+    ]
+  }
+}

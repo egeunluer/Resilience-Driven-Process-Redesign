@@ -81,9 +81,14 @@ else:
     # (Training_Readiness_Implementation_Summary.md SS48), overriding
     # train_DRL.py's own historical no-argv default of RF2.
     reward_function = 'RF2'
-    artifact_path = '../../Module 1/artifacts/consulta.json'
-    pool_override_path = '../../Module 1/artifacts/consulta_min3activities_plus157_pool.json'
-    calibration_path = '../../Module 1/artifacts/consulta_min3activities_plus157_calendar_calibration.json'
+    # measured60: processing times with durations <= 60 s treated as unmeasured
+    # (empirical_preprocessing.py --min-measured-pt 60). In Consulta many events are
+    # 1-2 s logging "ticks"; medians built on them made some resources look 100-1000x
+    # faster than the rest. The earlier consulta.json / plus157 pool / calibration
+    # stay in place as the record of the runs trained before this change.
+    artifact_path = '../../Module 1/artifacts/consulta_measured60.json'
+    pool_override_path = '../../Module 1/artifacts/consulta_measured60_min3activities_plus157_pool.json'
+    calibration_path = '../../Module 1/artifacts/consulta_measured60_min3activities_plus157_calendar_calibration.json'
 
 # RF2 (revised, RF2_reward_function.md): r_k = (-D_k + rf2_epsilon * H_k) / CPL_base[e_j],
 # headroom H capped at h_max (below). p_cpl_fraction is evaluation-only (CPL_max = p *
