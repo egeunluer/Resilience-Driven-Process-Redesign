@@ -37,6 +37,8 @@ class InterTriggerTimer(object):
         # get_next_arrival, so pre-generation is unnecessary and would crash.
         if self._type == 'custom':
             self.generate_arrivals(n_traces, start)
+        elif self._type == 'empirical_weekly':
+            self.generate_empirical_weekly_arrivals(n_traces, start)
 
     def get_next_arrival(self, env, case, name_log, calendar):
         """Generate a new arrival from the distribution and check if the new token arrival is inside calendar,
@@ -66,7 +68,7 @@ class InterTriggerTimer(object):
             # sets self._previous directly from a precomputed timestamp and must
             # not have a stale self._interval folded into it.
             self._previous += self._interval
-        elif self._type == 'custom':
+        elif self._type in ('custom', 'empirical_weekly'):
             #self._interval += self.custom_arrival(case, self._previous_date, name_log)
             self._previous = (self.arrivals.iloc[case][0] - self._start_time).total_seconds()
         else:
@@ -123,6 +125,27 @@ class InterTriggerTimer(object):
         times = pd.concat(gen_cases, axis=0, ignore_index=True)
         self.arrivals = times.iloc[:num_instances]
         self.arrivals = self.arrivals.sort_values(by='timestamp')
+
+    def generate_empirical_weekly_arrivals(self, num_instances, start_time):
+        """Non-homogeneous Poisson arrivals from the log's hour-of-week profile
+        (interTriggerTimer.rates_per_hour_of_week, mined by mine_arrival_profile.py):
+        each simulated hour gets Poisson(rate of its weekday/hour slot) arrivals,
+        placed uniformly within the hour. Draws from np.random, so gym_env.reset(seed)
+        makes them reproducible. Generated up front like the 'custom' type, so
+        DEMAND_SPIKE's interruption of pending arrivals works the same way."""
+        rates = self.params.INTER_TRIGGER['rates_per_hour_of_week']
+        if len(rates) != 168 or sum(rates) <= 0:
+            raise ValueError("interTriggerTimer.rates_per_hour_of_week must hold 168 rates, not all zero")
+        hour = start_time.replace(minute=0, second=0, microsecond=0)
+        times = []
+        while len(times) < num_instances:
+            n = np.random.poisson(rates[hour.weekday() * 24 + hour.hour])
+            for offset in np.sort(np.random.uniform(0, 3600, n)):
+                t = hour + timedelta(seconds=float(offset))
+                if t >= start_time:
+                    times.append(t)
+            hour += timedelta(hours=1)
+        self.arrivals = pd.DataFrame({'timestamp': times[:num_instances]})
 
     def custom_arrival(self, case, previous, name_log):
         """

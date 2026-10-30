@@ -225,27 +225,31 @@ class Token(object):
         else:
             return True
 
+    @staticmethod
+    def _is_number(x):
+        return isinstance(x, (int, float)) and not isinstance(x, bool)
+
     def _check_type_paths(self, prob):
         if type(prob[0]) is str:
             if sum([x == prob[0] for x in prob]) != len(prob):
                 raise ValueError('ERROR: Not all path are defined as same type ', prob)
-        elif type(prob[0]) is float:
-            if sum([isinstance(x, float) for x in prob]) != len(prob):
-                raise ValueError('ERROR: Not all path are defined as same type (float number) ', prob)
+        elif self._is_number(prob[0]):
+            # Numbers are relative weights (e.g. mined firing counts), ints or floats.
+            if not all(self._is_number(x) for x in prob):
+                raise ValueError('ERROR: Not all path are defined as same type (number) ', prob)
         else:
-            raise ValueError("ERROR: Invalid input, specify the probability as AUTO, float number or CUSTOM ", prob)
+            raise ValueError("ERROR: Invalid input, specify the probability as AUTO, a number or CUSTOM ", prob)
 
     def _retrieve_check_paths(self, all_enabled_trans):
         prob = []
         for trans in all_enabled_trans:
-            try:
-                if trans.label:
-                    prob.append(self._params.PROBABILITY[trans.label])
-                else:
-                    prob.append(self._params.PROBABILITY[trans.name])
-            except:
-                print('ERROR: Not all path probabilities are defined. Define all paths: ', all_enabled_trans)
-
+            key = trans.label if trans.label else trans.name
+            if key not in self._params.PROBABILITY:
+                # Previously only printed, which left `prob` shorter than the list of
+                # enabled transitions and silently misaligned weights and paths.
+                raise ValueError(f'ERROR: Not all path probabilities are defined; missing {key!r} '
+                                 f'among {all_enabled_trans}')
+            prob.append(self._params.PROBABILITY[key])
         return prob
 
     def define_xor_next_activity(self, all_enabled_trans):
@@ -281,10 +285,14 @@ class Token(object):
                 next = random.choices(list(range(0, len(all_enabled_trans), 1)))[0]
         elif prob[0] == 'CUSTOM':
             next = self.call_custom_xor_function(all_enabled_trans)
-        elif type(prob[0] == float()):
-            if not self._check_probability(prob):
-                value = [*range(0, len(prob), 1)]
-                next = int(random.choices(value, prob)[0])
+        else:
+            # Numeric weights, normalized over the enabled transitions by
+            # random.choices. (Was inverted: weights summing to 1 fell back to a
+            # uniform choice and only non-normalized ones were used, behind an
+            # always-true `type(prob[0] == float())` condition.) Uniform only if
+            # every enabled path has weight 0, i.e. none was ever observed.
+            if sum(prob) > 0:
+                next = random.choices(list(range(0, len(prob), 1)), weights=prob)[0]
             else:
                 next = random.choices(list(range(0, len(all_enabled_trans), 1)))[0]
         return all_enabled_trans[next]

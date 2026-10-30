@@ -3,7 +3,9 @@
     "traces": 181,
     "traces_entire_log": 954,
     "interTriggerTimer": {
-        "type": "custom"
+        "type": "empirical_weekly",
+        "rates_per_hour_of_week": [0.190476, 0.095238, 0.333333, 0.142857, 0.142857, 0.000000, 0.142857, 0.000000, 0.000000, 0.047619, 0.047619, 0.047619, 0.047619, 0.363636, 0.227273, 0.409091, 0.590909, 0.681818, 0.681818, 0.727273, 0.681818, 0.500000, 0.227273, 1.000000, 0.818182, 0.136364, 0.272727, 0.181818, 0.227273, 0.000000, 0.000000, 0.045455, 0.000000, 0.045455, 0.136364, 0.000000, 0.136364, 0.409091, 0.318182, 0.409091, 0.285714, 0.523810, 0.476190, 0.666667, 0.571429, 0.571429, 0.809524, 0.619048, 0.428571, 0.333333, 0.476190, 0.285714, 0.142857, 0.095238, 0.047619, 0.047619, 0.095238, 0.000000, 0.047619, 0.047619, 0.190476, 0.333333, 0.238095, 0.904762, 1.285714, 0.761905, 0.666667, 0.714286, 0.285714, 0.666667, 0.666667, 0.523810, 0.523810, 0.571429, 0.333333, 0.238095, 0.000000, 0.000000, 0.095238, 0.047619, 0.000000, 0.000000, 0.095238, 0.238095, 0.333333, 0.095238, 0.380952, 0.571429, 0.714286, 0.857143, 0.476190, 0.666667, 0.904762, 0.333333, 0.904762, 0.571429, 0.666667, 0.285714, 0.142857, 0.095238, 0.142857, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.047619, 0.047619, 0.142857, 0.047619, 0.333333, 0.428571, 0.476190, 0.523810, 0.333333, 1.095238, 0.380952, 0.380952, 0.809524, 0.428571, 0.333333, 0.190476, 0.095238, 0.238095, 0.238095, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.047619, 0.047619, 0.047619, 0.047619, 0.047619, 0.142857, 0.142857, 0.047619, 0.047619, 0.142857, 0.000000, 0.095238, 0.142857, 0.380952, 0.095238, 0.095238, 0.000000, 0.047619, 0.000000, 0.000000, 0.047619, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.095238, 0.142857, 0.285714, 0.000000, 0.333333, 0.142857, 0.285714, 0.285714, 0.095238, 0.380952, 0.142857],
+        "source": "Hour-of-week arrival rates (cases/hour, slot 0 = Monday 00:00 wall-clock as written in the log) from 954 case arrivals in ConsultaDataMining201618.xes over 148 days, written by mine_arrival_profile.py. Replaces the 'custom' Prophet model."
     },
     "resource": {
         "8824":{"resources":["8824"],"calendar":{"days":[1, 2, 3, 4],"hour_min":14,"hour_max":22}},
@@ -74,7 +76,36 @@
         }
     },
     "probability": {
+        "1e766e4f-d9b1-4c3b-81c0-2dca839140eb": 125,
+        "29030cd5-0dc7-43f6-b204-70789d6c08b2": 141,
+        "45a490e5-8d99-4fb1-983d-b29e60b65c62": 2,
+        "63c668e7-1a68-44bf-b4cf-1238fc4885b6": 456,
+        "69fddf5e-fc86-4be3-a268-80c9a60a8bc4": 0,
+        "Avanzar recepcion documentos": 14,
+        "Cancelar Solicitud": 425,
+        "Cancelar curso": 21,
+        "Evaluacion curso": 237,
+        "Homologacion por grupo de cursos": 479,
+        "Notificacion estudiante cancelacion soli": 464,
+        "Radicar Solicitud Homologacion": 965,
+        "Recepcion de documentos": 23,
+        "Revisar curso": 281,
+        "Traer informacion estudiante - banner": 943,
+        "Transferir Creditos": 70,
+        "Transferir creditos homologables": 93,
+        "Validacion final": 153,
+        "Validar solicitud": 562,
+        "Validar solicitud / pre-homologacion": 79,
+        "Visto Bueno Cierre Proceso": 153,
+        "bffdcce5-bf33-4d12-8cb8-1c0d01e26216": 311,
+        "node_1ad34ddb-3406-4201-ab4a-43ee31de2501": 21,
+        "node_3ff1f849-94de-4f0a-a447-b358691b4cb3": 477,
+        "node_8174156c-fed9-4f9a-9bdc-357c40c45952": 2,
+        "node_b7551541-1842-40cb-b530-59764cdfbed3": 941,
+        "node_b8ecf232-b0bb-4b6f-9947-213915fd0221": 332,
+        "node_ce824290-0d79-408d-bb96-c9f2415175a5": 0
     },
+    "probability_source": "Transition firing counts from token-based replay of ConsultaDataMining201618.xes on ConsultaDataMining201618.pnml (954 traces, 56.0% perfectly fitting), written by mine_branch_probabilities.py. Relative weights, normalized over the enabled transitions at each decision.",
     "resource_table": [
         {
             "role": "Role 1",
