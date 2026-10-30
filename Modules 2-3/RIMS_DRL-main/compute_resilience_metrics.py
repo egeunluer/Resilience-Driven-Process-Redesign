@@ -132,8 +132,12 @@ def main():
             f"Calibration file was computed with calendar={cfg.get('calendar', False)}, not "
             f"calendar={args.calendar}. Refusing to reuse a mismatched calibration."
         )
+    # Recovery rule (when shocked episodes end): always the one the calibration was
+    # computed under, read from the file rather than set separately here.
+    args.recovery_requires_backlog_cleared = cfg.get('recovery_requires_backlog_cleared', False)
     p_star = calibration['P_star']
-    print(f"Using P_star={p_star:.1f}s from {args.calibration}", flush=True)
+    print(f"Using P_star={p_star:.1f}s from {args.calibration} "
+          f"(recovery_requires_backlog_cleared={args.recovery_requires_backlog_cleared})", flush=True)
     # D9 (revised): phi(t)'s tumbling-batch size must match whatever calibrate_
     # resilience_constants.py used to compute P*/cpl_base/phi_fix -- read it back
     # from the same calibration file rather than letting this script default
@@ -175,6 +179,7 @@ def main():
         "config_used": {
             "dataset": args.dataset, "artifact": args.artifact, "pool": args.pool,
             "calibration": args.calibration, "calendar": args.calendar, "threshold": args.threshold,
+            "recovery_requires_backlog_cleared": args.recovery_requires_backlog_cleared,
             "n_traces": args.n_traces, "magnitudes": magnitudes, "duration": args.duration,
             "seeds": seeds, "policy": "least_used", "shock_type": "DEMAND_SPIKE",
         },

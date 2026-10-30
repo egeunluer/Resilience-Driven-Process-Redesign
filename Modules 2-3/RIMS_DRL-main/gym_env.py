@@ -19,6 +19,7 @@ import warnings
 import json
 import math
 import pm4py
+from collections import defaultdict
 from os.path import exists
 from datetime import datetime, timedelta
 import random
@@ -29,6 +30,8 @@ CYCLE_TIME_MAX = 8.64e+6
 # deadlock-avoidance placeholder, not a resource meant to be genuinely selected between.
 PLACEHOLDER_RESOURCE = '__NO_RESOURCE__'
 _ALWAYS_ON_CALENDAR = {'days': [0, 1, 2, 3, 4, 5, 6], 'hour_min': 0, 'hour_max': 24}
+# Waiting-case count at which an activity's queue observation saturates at 1.0 (log scale).
+QUEUE_OBS_MAX = 50
 
 
 DEBUG_PRINT = False
@@ -37,7 +40,7 @@ if __name__ == "__main__":
 
 
 class gym_env(Env):
-    def __init__(self, NAME_LOG, N_TRACES, CALENDAR, POLICY=None, N_SIMULATION=0, threshold=0, postpone=True, reward_function='inverse_CT', artifact_path=None, shock_config=None, cpl_base_table=None, rf2_epsilon=0.5, cpl_max_fraction=None, phi_fix=None, beta=0.5, pool_override_path=None, p_star_override=None, ppi_window_n_override=None) -> None:
+    def __init__(self, NAME_LOG, N_TRACES, CALENDAR, POLICY=None, N_SIMULATION=0, threshold=0, postpone=True, reward_function='inverse_CT', artifact_path=None, shock_config=None, cpl_base_table=None, rf2_epsilon=0.5, cpl_max_fraction=None, phi_fix=None, beta=0.5, pool_override_path=None, p_star_override=None, ppi_window_n_override=None, recovery_threshold=None, recovery_requires_backlog_cleared=False, headroom_cap=None) -> None:
         self.name_log = NAME_LOG
 
         self.CALENDAR = CALENDAR ## "True" If you want to use calendar, "False" otherwise
@@ -87,6 +90,19 @@ class gym_env(Env):
         # artifact's own P_star (which is still the historical p95, not this
         # simulator-native value) when given.
         self.P_star = p_star_override if p_star_override is not None else artifact.get('P_star')
+        # recovery_threshold: the phi(t) level a post-shock batch must return to for
+        # the episode to count as recovered (and end). Defaults to P*; can be set
+        # lower, e.g. to the no-shock mean cycle time, so an episode only ends once
+        # performance is back to normal rather than merely back under P*. Loss
+        # (d(t), CPL) is still measured against P* either way.
+        self.recovery_threshold = recovery_threshold
+        # recovery_requires_backlog_cleared: additionally require every case that
+        # arrived during the shock to have completed. Without it, the first
+        # post-shock batch is typically quick late arrivals, so "recovered" can be
+        # declared while the shock's backlog is still waiting -- and the long
+        # cycle times of those cases, i.e. most of the shock's impact, are never
+        # counted.
+        self.recovery_requires_backlog_cleared = recovery_requires_backlog_cleared
         self.normalization_cycle_time = artifact.get('normalization_cycle_time', self.normalization_cycle_time)
         # D9 (revised): ppi_window_n is now the size of a non-overlapping ("tumbling")
         # batch, not a rolling/sliding window. phi(t) is recomputed only once every
@@ -127,6 +143,12 @@ class gym_env(Env):
         # No Lagrange multiplier, no u_k observation, no trace-completion reward.
         self.cpl_base_table = cpl_base_table
         self.rf2_epsilon = rf2_epsilon
+        # headroom_cap (h_max, RF2_reward_function.md SS1/SS5): h(t) = min(h_max, max(0,
+        # P* - phi(t))), so being below P* earns credit only up to normal operation
+        # (h_max = P* - mean no-shock phi), not for running faster than normal. None =
+        # uncapped. Without it, long recovery-based episodes accrued so much headroom
+        # (~2,600 h^2 vs ~400-1,200 h^2 of loss) that it outweighed the loss term.
+        self.headroom_cap = headroom_cap
         self.cpl_max_fraction = cpl_max_fraction
         self.cpl_base_current = None       # CPL_base[e_j] of this episode's shock, set in reset()
         if reward_function == 'RF2' and (shock_config is None or not cpl_base_table):
@@ -182,6 +204,10 @@ class gym_env(Env):
             self.input += ['day', 'hour']
         # D5/D7: shock signal — lets the agent distinguish shock vs. no-shock states.
         self.input += ['shock_active']
+        # Performance and shock-phase context (see get_state): phi(t) relative to P*,
+        # the quantity RF2's reward is built on, and how far into the shock/recovery
+        # the episode is.
+        self.input += ['phi_vs_p_star', 'time_since_onset']
         # The outputs are: the assignments (resource, task_type)
         #self.output = [(resource, task_type) for task_type in self.task_types for resource in self.resources] + ['Postpone']
 
@@ -216,6 +242,22 @@ class gym_env(Env):
         # Module 1 artifact (D4 min-support filter already applied there).
         self.output = self.retrieve_possible_assignments()
         print(len(self.input), len(self.output))
+        # Placeholder-only activities (Module 1 activities_at_risk, e.g. Start, End,
+        # Submit Request): their only "resource" is PLACEHOLDER_RESOURCE, which has
+        # unlimited capacity, so there is no real decision to make for them. They
+        # are started automatically as soon as a case reaches them
+        # (_dispatch_placeholder_tasks) instead of each one waiting for an agent
+        # decision: since the placeholder never registers as becoming busy/free,
+        # next_decision_moment used to advance the clock after every single one,
+        # building an artificial queue (median ~21h waits under a spike-5 shock)
+        # at a step that should take no queueing time at all. Their (placeholder,
+        # activity) pairs stay in self.output (fixed action space) but are never
+        # unmasked.
+        self._placeholder_activities = {
+            a for a in self.resource_processing_times.get(PLACEHOLDER_RESOURCE, {})
+            if not any(a in acts for r, acts in self.resource_processing_times.items()
+                       if r != PLACEHOLDER_RESOURCE)
+        }
         # Observation space
         lows = np.array([0 for _ in range(len(self.input))])
         highs = np.array([1 for _ in range(len(self.input))])
@@ -267,6 +309,12 @@ class gym_env(Env):
         once every `ppi_window_n` new completions. 0.0 before the first batch completes."""
         return self._current_phi
 
+    def _shock_backlog(self):
+        """Ids of cases that arrived during the shock and haven't completed yet."""
+        sp = self.simulation_process
+        return {i for i, t in sp.trace_arrival_times.items()
+                if self.shock_onset_time <= t < self.shock_offset_time and i not in sp.trace_end_times}
+
     def _integrate_phi_area(self, t):
         """Advance the running loss/headroom areas from self._area_t to t under the
         current phi(t). phi is piecewise constant, so integrating up to every batch
@@ -277,7 +325,10 @@ class gym_env(Env):
         dt = t - self._area_t
         if dt > 0:
             self.cpl_accumulated += max(0.0, self._current_phi - self.P_star) * dt
-            self.headroom_accumulated += max(0.0, self.P_star - self._current_phi) * dt
+            h = max(0.0, self.P_star - self._current_phi)
+            if self.headroom_cap is not None:
+                h = min(h, self.headroom_cap)
+            self.headroom_accumulated += h * dt
             self._area_t = t
 
     def _canonical_activity(self, activity):
@@ -372,6 +423,7 @@ class gym_env(Env):
         if self.shock_config is not None:
             self.simulation_process.shock_config = self.shock_config
         self.completed_traces = []
+        self._dispatched_placeholder = set()   # see _dispatch_placeholder_tasks
         #if i != None:
 
         if self.print:
@@ -408,6 +460,9 @@ class gym_env(Env):
             if len(self.simulation_process.tokens_pending) > 0:
                 not_token_ready = False
             self.env.step()
+        # The first pending tasks are typically placeholder steps (Start/Submit
+        # Request), which are no longer agent decisions: run on until a real one.
+        self._advance_to_decision_point()
 
         # D-single-shock: hidden FIFO warm-up, then fire exactly one shock, then
         # hand control to the agent. The agent's first-ever step() in this episode
@@ -474,6 +529,10 @@ class gym_env(Env):
             self.headroom_accumulated = 0.0
             self._area_t = float(self.env.now)
 
+        # Hand control over only at a real decision point (normally already the
+        # case here; a no-op then). Any post-onset time this advances over is
+        # integrated into the areas by the first step(), from _area_t onward.
+        self._advance_to_decision_point()
         return self.get_state(), {}
 
     def _warm_up(self):
@@ -529,10 +588,11 @@ class gym_env(Env):
                 #print(token_id)
             else:
                 token_id = list(tokens_pending.keys())[0]
+            started_entry = self.simulation_process.tokens_pending[token_id]
             simulation = self.tokens[token_id].simulation({'task': self.output[action][1],
                                                            'resource': self.output[action][0]})
             self.env.process(simulation)
-            self.next_decision_moment(self.output[action]) #arg not used
+            self.next_decision_moment(self.output[action], started=(token_id, started_entry))
         #elif self.check_exception_postpone(): ### exception case: all available resources and all tokens already arrived
         #    for token in self.simulation_process.tokens_pending:
         #        wait = self.simulation_process.tokens_pending[token][0].update_time_after_postpone(5)
@@ -623,13 +683,16 @@ class gym_env(Env):
         # <= P_star" -- with a small batch size, the shock's own duration can
         # easily elapse before a single post-shock batch completes, which would
         # otherwise let a stale PRE-shock reading trigger a false "recovered")
-        # AND phi(t) has dropped back to/below P*.
+        # AND phi(t) has dropped back to/below the recovery threshold (P* unless
+        # recovery_threshold is set).
+        threshold = self.recovery_threshold if self.recovery_threshold is not None else self.P_star
         recovered = (
             self.shock_fired is not None
-            and self.P_star is not None
+            and threshold is not None
             and not self.simulation_process.shock_state.is_active
             and self._phi_batches_completed > self._phi_batches_completed_at_shock_onset
-            and self._current_ppi() <= self.P_star
+            and self._current_ppi() <= threshold
+            and (not self.recovery_requires_backlog_cleared or not self._shock_backlog())
         )
         # No recovery backstop: an episode runs until phi(t) genuinely drops back
         # to <= P_star or the trace population is exhausted, however long that
@@ -736,10 +799,43 @@ class gym_env(Env):
         return self.get_state(), reward, isTerminated, {}, {}
 
 
+    def _dispatch_placeholder_tasks(self):
+        """Start every pending task of a placeholder-only activity right away, on
+        PLACEHOLDER_RESOURCE (see self._placeholder_activities). A started task
+        leaves tokens_pending only once SimPy runs its process (later, at the same
+        simulated time), so each (case, pending-since) pair is remembered to never
+        start the same task twice."""
+        if not self._placeholder_activities:
+            return
+        for token_id, (token, pending_since) in list(self.simulation_process.tokens_pending.items()):
+            activity = self._canonical_activity(token._next_activity)
+            if activity in self._placeholder_activities and (token_id, pending_since) not in self._dispatched_placeholder:
+                self._dispatched_placeholder.add((token_id, pending_since))
+                self.env.process(self.tokens[token_id].simulation(
+                    {'task': activity, 'resource': PLACEHOLDER_RESOURCE}))
+
+    def _staff_waiting_keys(self):
+        """(case, waiting-since) for every case waiting for a non-placeholder
+        activity, i.e. one the agent has to assign."""
+        return {(token_id, since) for token_id, (token, since) in self.simulation_process.tokens_pending.items()
+                if self._canonical_activity(token._next_activity) not in self._placeholder_activities}
+
+    def _advance_to_decision_point(self):
+        """Run the simulation forward (auto-starting placeholder tasks on the way)
+        until a real assignment is possible or nothing is left to simulate."""
+        self._dispatch_placeholder_tasks()
+        while self.env.peek() != math.inf and not self.check_possible_assignments(
+                set(self.simulation_process.get_state()['resource_available']),
+                self.simulation_process.tokens_pending):
+            self.env.step()
+            self.delete_tokens_ended()
+            self._dispatch_placeholder_tasks()
+
     def check_possible_assignments(self, resources_a, tokens):
         possible_tasks = []
         for action in self.output:
-            if action[0] in resources_a:
+            # Placeholder tasks are auto-started, never an agent decision.
+            if action[0] in resources_a and action[0] != PLACEHOLDER_RESOURCE:
                 possible_tasks.append(action[1])
         possible_ass = False
         for token in tokens:
@@ -777,23 +873,45 @@ class gym_env(Env):
             if not bool(set(pre_cycle_time) & set(actual_state)):
                 next_step = False
 
-    def next_decision_moment(self, action):
+    def next_decision_moment(self, action, started=None):
+        # started: (case id, its tokens_pending entry) the agent just assigned. That
+        # task only leaves tokens_pending (and its resource only turns busy) once
+        # SimPy runs the new process; another event at the same instant can count as
+        # a "state change" before that, and handing control back then let the agent
+        # assign the very same case again (KeyError in del_tokens_pending). So
+        # control is never returned while that exact entry is still pending. It's
+        # compared by identity, not by case id: a short task can finish at once and
+        # the same case then waits again (a new entry) for its next activity.
         next_step = True
         pre_state_res = set(self.simulation_process.get_state()['resource_available'])
         pre_state_tokens = len(self.simulation_process.get_state()['traces']['ongoing'])
+        self._dispatch_placeholder_tasks()
+        pre_waiting = self._staff_waiting_keys()
         while next_step:
             if self.env.peek() == math.inf:
                 next_step = False
             else:
                 self.env.step()
+                self._dispatch_placeholder_tasks()
             actual_state = self.simulation_process.get_state()
             state_res = set(actual_state['resource_available'])
             state_tokens = len(actual_state['traces']['ongoing'])
-            if pre_state_res != state_res or state_tokens > pre_state_tokens: ### state changed
+            if started is not None and self.simulation_process.tokens_pending.get(started[0]) is started[1]:
+                # Not started yet: keep pre_state as is, so the start itself still
+                # registers as a state change on a later iteration.
+                self.delete_tokens_ended()
+                continue
+            # A case newly waiting for a staff activity is a state change too: e.g.
+            # one finishing an (auto-started) placeholder step frees no resource and
+            # adds no case, so without this it would wait for some unrelated event
+            # before the agent ever got to assign it.
+            waiting = self._staff_waiting_keys()
+            if pre_state_res != state_res or state_tokens > pre_state_tokens or waiting - pre_waiting: ### state changed
                 if self.check_possible_assignments(state_res, self.simulation_process.tokens_pending):
                     next_step = False
             pre_state_res = state_res
             pre_state_tokens = state_tokens
+            pre_waiting = waiting
             self.delete_tokens_ended()
 
     def get_state(self):
@@ -807,20 +925,34 @@ class gym_env(Env):
         resource_assigned_to = [0.0 for _ in range(len(self.resources))]
         for (trace_id, task_type, res) in env_state['actual_assignment']:
             resource_assigned_to[self.resources.index(res)] = (self.task_types.index(task_type) + 1) / len(self.task_types)
-        # for each activity: it counts how many tokens_pending are waiting the resource with that activity
-        # It counts until 10 and normalize by 10
-        if len(self.simulation_process.tokens_pending) > 0:
-            task_types_num = [min(1.0, sum([1 if self._canonical_activity(self.simulation_process.tokens_pending[token][0]._next_activity) == task_type else 0 for token in self.simulation_process.tokens_pending])/10) for task_type in self.task_types]
-        else:
-            task_types_num = [0.0 for _ in range(len(self.task_types))]
+        # for each activity: how many cases are waiting for it, on a log scale saturating
+        # at QUEUE_OBS_MAX: log1p(n) / log1p(QUEUE_OBS_MAX), so 1 case -> 0.18, 10 -> 0.61,
+        # 30 -> 0.87. (Was min(1, n/10): weekend peaks of 13-30 waiting cases under a
+        # spike all read as the same 1.0.)
+        queue = defaultdict(int)
+        for token in self.simulation_process.tokens_pending.values():
+            queue[self._canonical_activity(token[0]._next_activity)] += 1
+        task_types_num = [min(1.0, math.log1p(queue[task_type]) / math.log1p(QUEUE_OBS_MAX)) for task_type in self.task_types]
         #wip = [(len(env_state['traces']['ongoing'])+1)/1000]
         # D5/D7: shock signal (1.0 = shock active, 0.0 = normal).
         shock_active = [float(self.simulation_process.shock_state.is_active)]
+        # phi(t) relative to P*, squashed into [0, 1): phi / (phi + P*), = 0.5 exactly at
+        # P*, rising towards 1 the further phi exceeds it (2 x P* -> 0.67).
+        phi = self._current_phi
+        phi_vs_p_star = [phi / (phi + self.P_star) if self.P_star and phi > 0 else 0.0]
+        # Time since the shock fired, relative to 3 x its duration (covers the shock
+        # and the recovery that follows), clipped to 1; 0 before any shock.
+        if self.shock_fired is not None:
+            elapsed = float(self.env.now) - self.shock_onset_time
+            time_since_onset = [min(1.0, max(0.0, elapsed / (3 * self.shock_fired[2])))]
+        else:
+            time_since_onset = [0.0]
+        context = shock_active + phi_vs_p_star + time_since_onset
         if self.CALENDAR:
             time = [env_state['time'].weekday()/6, (env_state['time'].hour*3600 + env_state['time'].minute*60 + env_state['time'].second)/(24*3600)]
-            return np.array(resource_available + resource_assigned_to + task_types_num + time + shock_active)
+            return np.array(resource_available + resource_assigned_to + task_types_num + time + context)
         else:
-            return np.array(resource_available + resource_assigned_to + task_types_num + shock_active)
+            return np.array(resource_available + resource_assigned_to + task_types_num + context)
 
     # Create an action mask which invalidates ineligible actions
     def action_masks(self) -> List[bool]:
@@ -828,6 +960,8 @@ class gym_env(Env):
         state_simulator = self.simulation_process.get_state()
         mask = [0 for _ in range(len(self.output))]
         for resource in self.resources:
+            if resource == PLACEHOLDER_RESOURCE:
+                continue   # placeholder tasks are auto-started, never chosen by the agent
             for task_type in self.task_types:
                 if state[self.input.index(resource + '_availability')] > 0 and state[self.input.index(task_type)] > 0:
                     if (resource, task_type) in self.output:

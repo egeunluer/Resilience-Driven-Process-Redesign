@@ -86,12 +86,27 @@ else:
     calibration_path = '../../Module 1/artifacts/consulta_min3activities_plus157_calendar_calibration.json'
 
 # RF2 (revised, RF2_reward_function.md): r_k = (-D_k + rf2_epsilon * H_k) / CPL_base[e_j],
-# headroom H uncapped. p_cpl_fraction is evaluation-only (CPL_max = p * CPL_base[e_j],
-# u = B_K / CPL_max logged at episode end) -- never part of the reward.
-rf2_epsilon = 0.5
+# headroom H capped at h_max (below). p_cpl_fraction is evaluation-only (CPL_max = p *
+# CPL_base[e_j], u = B_K / CPL_max logged at episode end) -- never part of the reward.
+# rf2_epsilon = 0.1: with the cap, 0.5 still let headroom outweigh loss for the mildest
+# spike (3x: +1.80 vs -1.22, random policy); at 0.1 loss dominates for every spike
+# (headroom part +0.08..+0.36 vs loss part -0.92..-1.22), per the spec's SS5 condition.
+rf2_epsilon = 0.1
+# Cap h(t) at h_max = P* - mean no-shock cycle time (read from the calibration file):
+# below-P* credit only up to normal operation, never for running faster than normal.
+# Uncapped, the long recovery-based episodes' headroom outweighed the loss term
+# (mean return +1.0 for an untrained agent, headroom part +2.1 vs loss part -1.1).
+rf2_cap_headroom = True
 p_cpl_fraction = 0.5
 # RF1's r1/r2 combination weight (Module_3_DRL_Environment_and_Agent.md §8).
 beta = 0.5
+# Recovery rule: an episode ends at recovery only once the shock is over, every case
+# that arrived during the shock has completed, and a new post-shock phi(t) batch is
+# <= P*. Without the backlog condition, the first post-shock batch of quick cases
+# ended episodes while the shock's backlog was still waiting: on the corrected
+# Consulta simulator every 100h spike (3x-6x) then measured CPL = 0, against
+# ~240-1,200 h^2 once the backlog is waited for. Must match the calibration file.
+recovery_requires_backlog_cleared = True
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +257,7 @@ if __name__ == '__main__':
     # ---------------------------------------------------------------------------
     p_star_override = None
     cpl_base_table = None
+    headroom_cap = None
     phi_fix = None
     if shock_config is not None:
         if calibration_path is None:
@@ -279,6 +295,14 @@ if __name__ == '__main__':
                 f"{cfg.get('calendar', False)}, not calendar={CALENDAR}. Refusing to reuse a "
                 f"mismatched calibration."
             )
+        # Recovery rule: decides when shocked episodes end, so CPL_base/phi_fix
+        # calibrated under one rule are not valid reference values under the other.
+        if cfg.get('recovery_requires_backlog_cleared', False) != recovery_requires_backlog_cleared:
+            raise ValueError(
+                f"Calibration file {calibration_path} was computed with "
+                f"recovery_requires_backlog_cleared={cfg.get('recovery_requires_backlog_cleared', False)}, "
+                f"not {recovery_requires_backlog_cleared}. Refusing to reuse a mismatched calibration."
+            )
         p_star_override = calibration['P_star']
         phi_fix = calibration['phi_fix']
         if reward_function == 'RF2':
@@ -303,6 +327,11 @@ if __name__ == '__main__':
                     f"{cfg.get('removal_scope')}) don't match this run's fixed "
                     f"({shock_config.duration_range}, {shock_config.resource_removal_scope})."
                 )
+            if rf2_cap_headroom:
+                if calibration.get('h_max') is None:
+                    raise ValueError(f"rf2_cap_headroom is set but {calibration_path} has no h_max "
+                                     f"(predates it). Re-run calibrate_resilience_constants.py.")
+                headroom_cap = calibration['h_max']
             for shock_type, magnitude in shock_config.cycle_schedule:
                 key = shock_key(shock_type, magnitude)
                 if cpl_base_table.get(key, 0.0) <= 0.0:
@@ -328,7 +357,7 @@ if __name__ == '__main__':
                   flush=True)
         print(f"Loaded calibration from {calibration_path}: "
               f"P_star={p_star_override:.4f} phi_fix={phi_fix:.4f} "
-              f"ppi_window_n={ppi_window_n_override} cpl_base_table={cpl_base_table}", flush=True)
+              f"ppi_window_n={ppi_window_n_override} headroom_cap={headroom_cap} cpl_base_table={cpl_base_table}", flush=True)
     else:
         ppi_window_n_override = None
 
@@ -343,12 +372,14 @@ if __name__ == '__main__':
         shock_config=shock_config,
         cpl_base_table=cpl_base_table,
         rf2_epsilon=rf2_epsilon,
+        headroom_cap=headroom_cap,
         cpl_max_fraction=p_cpl_fraction,
         phi_fix=phi_fix,
         beta=beta,
         pool_override_path=pool_override_path,
         p_star_override=p_star_override,
         ppi_window_n_override=ppi_window_n_override,
+        recovery_requires_backlog_cleared=recovery_requires_backlog_cleared,
     )
     env = Monitor(env_simulator, log_dir)
 
@@ -378,7 +409,10 @@ if __name__ == '__main__':
                 os.replace(os.path.join(log_dir, name),
                            os.path.join(log_dir, f"{name[:-4]}_upto{model.num_timesteps}.csv"))
     else:
-        model = MaskablePPO(CustomPolicy, env_simulator, clip_range=0.2, learning_rate=linear_schedule(3e-4), n_steps=int(n_steps), batch_size=256, gamma=gamma, verbose=1)
+        # gae_lambda=0.99 (SB3 default 0.95): an assignment's effect on the reward only
+        # shows once its case completes and closes a phi(t) batch, often hundreds of
+        # decisions later; at 0.95 the advantage estimate discounts that by ~0.95**200.
+        model = MaskablePPO(CustomPolicy, env_simulator, clip_range=0.2, learning_rate=linear_schedule(3e-4), n_steps=int(n_steps), batch_size=256, gamma=gamma, gae_lambda=0.99, verbose=1)
 
     # Logging to tensorboard (train/, rollout/, resilience/, eval/ scalars). A resumed
     # run writes a new event file into the same folder, continuing at its step count.
@@ -395,12 +429,14 @@ if __name__ == '__main__':
         shock_config=shock_config,
         cpl_base_table=cpl_base_table,
         rf2_epsilon=rf2_epsilon,
+        headroom_cap=headroom_cap,
         cpl_max_fraction=p_cpl_fraction,
         phi_fix=phi_fix,
         beta=beta,
         pool_override_path=pool_override_path,
         p_star_override=p_star_override,
         ppi_window_n_override=ppi_window_n_override,
+        recovery_requires_backlog_cleared=recovery_requires_backlog_cleared,
     )
     eval_env = Monitor(eval_env, log_dir)
     nr_evaluations = 10 if NAME_LOG != 'BPI_Challenge_2017_W_Two_TS' else 3

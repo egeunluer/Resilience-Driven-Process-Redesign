@@ -27,6 +27,9 @@ class SimulationProcess(object):
         # only keeps (id, cycle_time); gym_env needs the completion instant to
         # integrate phi(t) exactly when a batch completes between two decisions.
         self.trace_end_times = {}
+        # Simulation time each trace arrived at, keyed by trace id (traces["ongoing"]
+        # overwrites its time on every activity completion, so it can't be used).
+        self.trace_arrival_times = {}
         self.resources_available = True ### check if there are resource to assign one event
         self.tokens_pending = {} ### dictionary keyv = id_case, element = tokenOBJ
         self.next_assign = None
@@ -137,6 +140,7 @@ class SimulationProcess(object):
 
     def _update_state_traces(self, id, env):
         self.traces["ongoing"].append((id, env.now))
+        self.trace_arrival_times[id] = float(env.now)
 
     def _release_resource_trace(self, id, time, request_resource):
         tupla = ()

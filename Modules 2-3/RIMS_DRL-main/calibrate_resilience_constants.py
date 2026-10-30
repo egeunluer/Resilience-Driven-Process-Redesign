@@ -110,6 +110,10 @@ def build_env(args, reward_function, shock_config, p_star_override=None, phi_fix
         # every gym_env construction site consistently (train_DRL.py loads this
         # same value back out of the calibration file this script writes).
         ppi_window_n_override=args.ppi_window_n,
+        # Recovery rule for the shocked stages: also wait until every case that
+        # arrived during the shock has completed (see gym_env). getattr: other
+        # scripts reuse build_env with their own args.
+        recovery_requires_backlog_cleared=getattr(args, 'recovery_requires_backlog_cleared', False),
     )
 
 
@@ -155,7 +159,7 @@ def calibrate_p_star(args):
     p_star = 2.0 * stat
     print(f"Pooled median={median:.1f}s, pooled mean={mean:.1f}s (n={len(arr)}) -> "
           f"P* = 2*{args.p_star_formula} = {p_star:.1f}s\n", flush=True)
-    return p_star
+    return p_star, mean
 
 
 def cycle_schedule_from_args(args):
@@ -271,18 +275,27 @@ def main():
     parser.add_argument('--cycle-resource-removal', default='0.2,0.3,0.4,0.5',
                          help="RESOURCE_REMOVAL magnitudes of the training cycle, in order -- one "
                               "CPL_base each. Must match train_DRL.py's cycle_schedule.")
+    parser.add_argument('--recovery-requires-backlog-cleared', action='store_true',
+                         help="An episode only counts as recovered once every case that arrived during "
+                              "the shock has completed (and phi(t) <= P*). Without it, the first post-shock "
+                              "batch of quick cases can end the episode before the shock's backlog -- and "
+                              "most of its loss -- is ever measured. Must match train_DRL.py.")
     parser.add_argument('--removal-scope', choices=['global', 'activity'], default='global',
                          help="ShockConfig.resource_removal_scope; must match train_DRL.py.")
     parser.add_argument('--n-phi-fix-rollouts', type=int, default=5)
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
 
-    p_star = calibrate_p_star(args)
+    p_star, baseline_mean_ct = calibrate_p_star(args)
     cpl_base_table, cpl_base_per_seed = calibrate_cpl_base_table(args, p_star)
     phi_fix = calibrate_phi_fix(args, p_star)
 
     result = {
         "P_star": p_star,
+        # Normal-operation reference for RF2's headroom cap: h_max = P* - mean no-shock
+        # cycle time (the pooled mean of the same baseline runs P* comes from).
+        "baseline_mean_cycle_time": baseline_mean_ct,
+        "h_max": p_star - baseline_mean_ct,
         "cpl_base_table": cpl_base_table,
         "cpl_base_per_seed": cpl_base_per_seed,
         "phi_fix": phi_fix,
@@ -301,6 +314,7 @@ def main():
             "cpl_base_policy": "random",
             "cycle_schedule": [[t, m] for t, m in cycle_schedule_from_args(args)],
             "removal_scope": args.removal_scope,
+            "recovery_requires_backlog_cleared": args.recovery_requires_backlog_cleared,
             "shock_type": args.shock_type,
             "shock_magnitude": args.shock_magnitude,
             "shock_duration": args.shock_duration,
