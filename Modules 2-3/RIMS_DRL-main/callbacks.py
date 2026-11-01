@@ -84,14 +84,19 @@ class EvalPolicyCallback(BaseCallback):
         # is read back, so the first evaluation after resuming can't overwrite a
         # better best_model just because the in-memory best started at infinity.
         # Ignored on a fresh run, so a leftover file from an earlier run in the
-        # same folder never carries over.
+        # same folder never carries over. Also ignored when it was scored on a
+        # different set of evaluation episodes, since the scores aren't comparable.
         self.best_score_path = os.path.join(log_dir, 'best_model_score.json')
         if resume and os.path.exists(self.best_score_path):
             with open(self.best_score_path) as f:
                 best = json.load(f)
-            self.best_mean_cpl_ratio = best.get('best_mean_cpl_ratio', np.inf)
-            self.best_mean_cycle_time = best.get('best_mean_cycle_time', np.inf)
-            print(f"Resumed best-model score from {self.best_score_path}: {best}", flush=True)
+            seeds = list(eval_seeds) if eval_seeds is not None else None
+            if best.get('eval_seeds') == seeds and best.get('deterministic') == deterministic:
+                self.best_mean_cpl_ratio = best.get('best_mean_cpl_ratio', np.inf)
+                self.best_mean_cycle_time = best.get('best_mean_cycle_time', np.inf)
+                print(f"Resumed best-model score from {self.best_score_path}: {best}", flush=True)
+            else:
+                print(f"Ignoring {self.best_score_path}: scored on a different evaluation set", flush=True)
 
     def _init_callback(self) -> None:
         # Create folder if needed
@@ -173,7 +178,9 @@ class EvalPolicyCallback(BaseCallback):
                 with open(self.best_score_path, 'w') as f:
                     json.dump({'best_mean_cpl_ratio': self.best_mean_cpl_ratio,
                                'best_mean_cycle_time': self.best_mean_cycle_time,
-                               'num_timesteps': self.num_timesteps}, f, indent=2)
+                               'num_timesteps': self.num_timesteps,
+                               'eval_seeds': list(self.eval_seeds) if self.eval_seeds is not None else None,
+                               'deterministic': self.deterministic}, f, indent=2)
             print('---- Finished evaluating current policy ----\n')
         return True
 

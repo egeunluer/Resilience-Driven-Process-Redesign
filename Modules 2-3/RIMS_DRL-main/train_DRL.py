@@ -105,6 +105,15 @@ rf2_cap_headroom = True
 p_cpl_fraction = 0.5
 # RF1's r1/r2 combination weight (Module_3_DRL_Environment_and_Agent.md §8).
 beta = 0.5
+# PPO learning rate, held constant for the whole run ('constant'), or decayed
+# linearly from this value to 0 over the run's total steps ('linear', the earlier
+# default). Constant because runs are extended in 500k chunks: with 'linear', every
+# resume restarted the schedule part-way and the last stretch of each chunk trained
+# with a learning rate near 0. RIMS_LR_SCHEDULE / RIMS_LEARNING_RATE override.
+learning_rate = float(os.environ.get('RIMS_LEARNING_RATE', 3e-4))
+lr_schedule = os.environ.get('RIMS_LR_SCHEDULE', 'constant')
+if lr_schedule not in ('constant', 'linear'):
+    raise ValueError(f"RIMS_LR_SCHEDULE must be 'constant' or 'linear', not {lr_schedule!r}")
 # Recovery rule: an episode ends at recovery only once the shock is over, every case
 # that arrived during the shock has completed, and a new post-shock phi(t) batch is
 # <= P*. Without the backlog condition, the first post-shock batch of quick cases
@@ -397,6 +406,8 @@ if __name__ == '__main__':
     # num_timesteps, so the step count and the linear learning-rate schedule
     # carry on where they stopped instead of restarting. Fails loudly if there
     # is nothing to resume from.
+    lr_value_or_schedule = learning_rate if lr_schedule == 'constant' else linear_schedule(learning_rate)
+    print(f"Learning rate: {lr_schedule}, {learning_rate:g}", flush=True)
     resume = os.environ.get('RIMS_RESUME', '0') == '1'
     latest_path = os.path.join(log_dir, 'latest_model.zip')
     if resume:
@@ -405,7 +416,11 @@ if __name__ == '__main__':
                 f"RIMS_RESUME=1 but {latest_path} doesn't exist. Check that RIMS_LOG_ROOT and "
                 f"RIMS_RUN_TAG match the interrupted run, or unset RIMS_RESUME to start fresh."
             )
-        model = MaskablePPO.load(latest_path, env=env_simulator)
+        # custom_objects replaces the learning rate stored in the checkpoint, from which
+        # load() rebuilds the schedule (otherwise a model saved under 'linear' would
+        # keep its old decaying schedule after resume).
+        model = MaskablePPO.load(latest_path, env=env_simulator,
+                                 custom_objects={'learning_rate': lr_value_or_schedule})
         print(f"Resuming from {latest_path} at {model.num_timesteps} of {time_steps} steps", flush=True)
         # SB3's CSV logger (and the eval Monitor below) open their files in write
         # mode -- keep the interrupted segment's files instead of overwriting them.
@@ -417,7 +432,7 @@ if __name__ == '__main__':
         # gae_lambda=0.99 (SB3 default 0.95): an assignment's effect on the reward only
         # shows once its case completes and closes a phi(t) batch, often hundreds of
         # decisions later; at 0.95 the advantage estimate discounts that by ~0.95**200.
-        model = MaskablePPO(CustomPolicy, env_simulator, clip_range=0.2, learning_rate=linear_schedule(3e-4), n_steps=int(n_steps), batch_size=256, gamma=gamma, gae_lambda=0.99, verbose=1)
+        model = MaskablePPO(CustomPolicy, env_simulator, clip_range=0.2, learning_rate=lr_value_or_schedule, n_steps=int(n_steps), batch_size=256, gamma=gamma, gae_lambda=0.99, verbose=1)
 
     # Logging to tensorboard (train/, rollout/, resilience/, eval/ scalars). A resumed
     # run writes a new event file into the same folder, continuing at its step count.
@@ -445,14 +460,16 @@ if __name__ == '__main__':
     )
     eval_env = Monitor(eval_env, log_dir)
     nr_evaluations = 10 if NAME_LOG != 'BPI_Challenge_2017_W_Two_TS' else 3
-    # With a shock cycle, evaluate exactly two full cycles per evaluation round
+    # With a shock cycle, evaluate exactly eight full cycles per evaluation round
     # (the callback restarts eval_env's cursor each round), so every round scores
     # the policy on the identical set of shocks and "best model" comparisons
-    # across rounds stay like-for-like.
+    # across rounds stay like-for-like. Eight cycles (32 episodes for Consulta),
+    # not two: with 8 episodes the round-to-round noise was large enough that
+    # record scores did not hold up on the 64-episode benchmark.
     if shock_config is not None and shock_config.cycle_schedule:
-        nr_evaluations = 2 * len(shock_config.cycle_schedule)
+        nr_evaluations = 8 * len(shock_config.cycle_schedule)
     # Fixed per-episode seeds + deterministic policy: every round evaluates on the
-    # identical episodes (two full shock cycles), so best_model is chosen by policy
+    # identical episodes (eight full shock cycles), so best_model is chosen by policy
     # quality rather than by which round happened to get easier arrivals. Seeds
     # 1000+ don't overlap the calibration's (0-15) or the benchmarks' (100-215).
     eval_seeds = [1000 + i for i in range(nr_evaluations)]
