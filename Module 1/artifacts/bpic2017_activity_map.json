@@ -1,0 +1,60 @@
+{
+  "_doc": "Log-specific input for loan_model/mine_stage_model.py (schema: loan_model/STAGE_MODEL_SCHEMA.md). Maps BPI Challenge 2017 activities onto stages, work items and timers. Everything else is mined.",
+  "log_name": "bpic2017",
+  "log_path": "Event Logs/BPI Challenge 2017.xes",
+  "timezone": "Europe/Amsterdam",
+  "system_resources": ["User_1"],
+  "lifecycle": {
+    "open": ["start", "resume"],
+    "close": ["suspend", "complete", "ate_abort", "withdraw"]
+  },
+  "case_attributes": ["RequestedAmount", "ApplicationType", "LoanGoal"],
+  "start_stage": "intake",
+  "stage_entry_milestones": {
+    "A_Create Application": "intake",
+    "A_Concept": "complete",
+    "A_Complete": "await_customer",
+    "A_Validating": "validation",
+    "A_Incomplete": "incomplete",
+    "A_Pending": "END_accepted",
+    "A_Denied": "END_denied",
+    "A_Cancelled": "END_cancelled"
+  },
+  "end_stages": ["END_accepted", "END_denied", "END_cancelled"],
+  "stage_work_items": {
+    "intake": "W_Handle leads",
+    "complete": "W_Complete application",
+    "await_customer": "W_Call after offers",
+    "validation": "W_Validate application",
+    "incomplete": "W_Call incomplete files"
+  },
+  "optional_work_items": {
+    "W_Assess potential fraud": {"stage": "validation", "flag": "fraud"}
+  },
+  "ignored_activities": ["W_Shortened completion", "W_Personal Loan collection"],
+  "case_flags": {
+    "online": {"activity": "A_Create Application", "resource_in": ["User_1"]}
+  },
+  "markers": {
+    "offer_created": ["O_Create Offer"],
+    "offer_sent": ["O_Sent (mail and online)", "O_Sent (online only)"],
+    "offer_sent_online_only": ["O_Sent (online only)"],
+    "offer_returned": ["O_Returned"]
+  },
+  "timers": [
+    {
+      "name": "offer_expiry",
+      "stage": "await_customer",
+      "anchor_marker": "offer_sent",
+      "anchor": "last",
+      "target": "END_cancelled",
+      "target_resource_in": ["User_1"],
+      "_doc": "Automatic cancellation by the system ~30 days after the last offer was sent."
+    }
+  ],
+  "visit_buckets": [1, 2, 3],
+  "session_attach_tolerance_s": 60,
+  "min_worker_sessions": 3,
+  "deadline_quantile": 0.9,
+  "n_quantiles": 101
+}

@@ -1,0 +1,54 @@
+{
+  "_doc": "Log-specific input for loan_model/mine_stage_model.py (schema: loan_model/STAGE_MODEL_SCHEMA.md). BPI Challenge 2012: the same bank and loan process as BPIC2017, Dutch work-item names, no A_Validating / A_Incomplete milestones (stage changes are marked by the next work item being scheduled), no online-channel flag, start/complete lifecycle only.",
+  "log_name": "bpi2012",
+  "log_path": "Event Logs/BPI_Challenge_2012.xes",
+  "timezone": "Europe/Amsterdam",
+  "system_resources": ["112"],
+  "lifecycle": {"open": ["start"], "close": ["complete"]},
+  "case_attributes": ["AMOUNT_REQ"],
+  "start_stage": "intake",
+  "stage_entry_milestones": {
+    "A_SUBMITTED": "intake",
+    "A_PREACCEPTED": "complete",
+    "A_FINALIZED": "await_customer",
+    "W_Valideren aanvraag@schedule": "validation",
+    "W_Nabellen incomplete dossiers@schedule": "incomplete",
+    "A_ACTIVATED": "END_accepted",
+    "A_DECLINED": "END_denied",
+    "A_CANCELLED": "END_cancelled"
+  },
+  "end_stages": ["END_accepted", "END_denied", "END_cancelled"],
+  "stage_work_items": {
+    "intake": "W_Afhandelen leads",
+    "complete": "W_Completeren aanvraag",
+    "await_customer": "W_Nabellen offertes",
+    "validation": "W_Valideren aanvraag",
+    "incomplete": "W_Nabellen incomplete dossiers"
+  },
+  "optional_work_items": {
+    "W_Beoordelen fraude": {"stage": "validation", "flag": "fraud"}
+  },
+  "ignored_activities": ["W_Wijzigen contractgegevens"],
+  "case_flags": {},
+  "markers": {
+    "offer_created": ["O_CREATED"],
+    "offer_sent": ["O_SENT"],
+    "offer_returned": ["O_SENT_BACK"]
+  },
+  "timers": [
+    {
+      "name": "offer_expiry",
+      "stage": "await_customer",
+      "anchor_marker": "offer_sent",
+      "anchor": "last",
+      "target": "END_cancelled",
+      "target_resource_in": ["112"],
+      "_doc": "Checked by mining: is there an automatic cancellation after the last offer sent, as in BPIC2017?"
+    }
+  ],
+  "visit_buckets": [1, 2, 3],
+  "session_attach_tolerance_s": 60,
+  "min_worker_sessions": 3,
+  "deadline_quantile": 0.9,
+  "n_quantiles": 101
+}

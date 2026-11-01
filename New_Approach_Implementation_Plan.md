@@ -9,8 +9,8 @@ White-box resilience engine on the original BPIC2017 log. Design rationale:
 |---|---|---|
 | 0 | Housekeeping: pending changes committed, assumptions table | ✅ |
 | 1 | Small triage proof of concept | ✅ passed on 3 of 3 training seeds |
-| 2 | Mine the full-log stage model | ⬜ |
-| 3 | Base simulator + validation against the log | ⬜ |
+| 2 | Mine the full-log stage model | ✅ BPIC2017 mined; BPI2012 mined with the same code |
+| 3 | Base simulator + validation against the log | ✅ BPIC2017 9/9 checks; BPI2012 runs unchanged |
 | 4 | Q(t), Loss and recovery tracking | ⬜ |
 | 5 | Disruptions D1, D2, D3, D6 (then D4, D5) | ⬜ |
 | 6 | Recovery actions, scarce resources, costs | ⬜ |
@@ -158,13 +158,13 @@ written once, and each event log is a config plus a mapping:
   | 2 | −5.20 | 0.254 | 2.26 | +0.17 ± 0.16 | +7.5 ± 1.0 | +13.2 ± 2.0 |
   | greedy (for reference) | −5.37 | 0.456 | 2.93 | — | — | — |
 
-### Phase 2 — Mine the full-log stage model ⬜
+### Phase 2 — Mine the full-log stage model ✅
 - **Define the stage-model config schema** (see "Config-driven stage model" above) and
   write `bpic2017_activity_map.json` (activity → stage / role).
 - **Mining script:** generic, driven by the mapping (`loan_model/mine_stage_model.py`), so
   the same script later mines BPI2012 from `bpi2012_activity_map.json`.
 
-The mining script writes `Module 1/artifacts/bpic2017_stage_model.json`:
+The mining script writes `Module 1/artifacts/bpic2017_stage_model.json` (planned contents):
 - **Arrivals:** hour-of-week profile; online share.
 - **Routing:**
   - online → `W_Handle leads`;
@@ -180,7 +180,39 @@ The mining script writes `Module 1/artifacts/bpic2017_stage_model.json`:
 - **Work:** W_ work durations and qualified workers (Module 1). A_/O_ milestones take zero time.
 - **Q(t) deadlines:** stage deadlines `D_k`.
 
-### Phase 3 — Base simulator + validation ⬜
+**Done (outputs):**
+- `loan_model/STAGE_MODEL_SCHEMA.md`: config schema and how the simulator reads it.
+- `Module 1/artifacts/bpic2017_activity_map.json` (by hand) and
+  `loan_model/mine_stage_model.py` (generic miner) → `bpic2017_stage_model.json`.
+- **Model:** 5 stages
+  `intake → complete → await_customer → validation ⇄ incomplete → accepted / denied / cancelled`.
+  Each stage has one work item, e.g. `W_Validate application`. Mined:
+  - routing per visit number;
+  - work sessions per worker;
+  - resource-free waits (initial delay, gaps, tail);
+  - the offer-expiry timer (30.7 d, explains 85% of await_customer cancellations);
+  - stage deadlines;
+  - calendar (Mon–Sat 07–21 local);
+  - weekly arrival profile;
+  - validation targets.
+- **Work is mined as active sessions** (start/resume → suspend/complete/abort), not with
+  Module 1's start→complete pairing: BPIC2017 work items are suspended for days while
+  waiting on the customer, so that pairing mixes waiting into work time. Module 1's W_
+  durations are therefore not reused.
+- **Portability check passed early:** `bpi2012_activity_map.json` runs through the same
+  miner (BPI2012: 13,087 cases, 53 workers). It needed two small, generic additions:
+  - entry keys of the form `ACTIVITY@lifecycle` (BPI2012 marks validation only by
+    `W_Valideren aanvraag@schedule`);
+  - skipping sessions without a recorded resource.
+  
+  BPI2012 also shows the **same 30.7-day offer expiry**, an independent confirmation of
+  the timer.
+- **Open points for Phase 3/4:**
+  1. The mined waits include the real queueing time, so the simulator's own queueing may
+     double-count it. Phase 3 validation checks this.
+  2. Intake's p90 deadline is 7.8 min, too tight to be meaningful; set a floor in Phase 4.
+
+### Phase 3 — Base simulator + validation ✅
 - **`loan_model/simulator.py`:** a **generic stage-model engine** that reads the config,
   with a SimPy process per case. Nothing is specific to BPIC2017 in the code.
   - Worker pools with calendars.
@@ -203,6 +235,56 @@ The mining script writes `Module 1/artifacts/bpic2017_stage_model.json`:
   - weekly pattern.
 - **Also measure here:** how heavily workers are loaded, which decides whether D4 can bite.
 - **Must pass before any disruption is added.**
+
+**Done (outputs):**
+- `loan_model/simulator.py`: a generic engine that reads the stage-model JSON (no
+  BPIC2017-specific code).
+  - Workers are capacity-1 servers, present per day with their mined probability, on
+    shift Mon–Sat 07–21 local.
+  - Fixed dispatcher: fastest free qualified worker, FIFO queue per work item.
+  - The offer-expiry timer races the customer wait (`simpy.AnyOf`).
+  - Records an event log (stage entries, sessions with request time).
+- `loan_model/calendar_time.py`: working-time clock shared by miner and simulator.
+- `validate_loan_model.py`: simulated vs log comparison (3 seeds × 240 days, cases
+  arriving on days 45–150).
+- **Fix found by validation:** with wall-clock waits the cycle-time median was +14%,
+  because waits ending at night queued until the morning shift, counting off-hours twice
+  (the log's waits always end inside a shift). Waits that end in a session are now mined
+  and replayed in **working time** (`*_w` fields). After the fix, queueing for workers
+  is ~0.
+
+**Validation result, BPIC2017 (all 9 checks ok):**
+
+| Metric | Simulated | Log |
+|---|---|---|
+| Cycle time p50 / p90 | 20.4 / 36.4 d | 19.1 / 35.0 d |
+| KS distance (cycle time) | 0.066 | — |
+| Accepted / cancelled / denied | 53.6 / 34.3 / 12.0 % | 54.7 / 33.1 / 11.9 % |
+| Cases with incomplete loop | 46.3 % | 47.6 % |
+| Validation rounds 0 / 1 / 2 / 3 | 31.8 / 32.1 / 24.5 / 8.4 % | 30.6 / 32.4 / 25.0 / 8.6 % |
+| Offers per case 1 / 2 / 3 | 72.5 / 21.2 / 4.3 % | 72.8 / 20.9 / 4.3 % |
+| Open cases (median) | 1,904 | 1,937 |
+| Arrivals per day | 86.0 | 86.2 |
+
+**Findings that matter for the next phases:**
+- **Warm-up:** open cases reach 95% of steady state on day 35, so 40 days is enough.
+  A 40-day warm-up takes ~1.1 s, so no shortcut is needed for now (revisit if training
+  needs many thousands of episodes).
+- **Worker utilisation is ~4%.** The log only records the minutes a work item is open
+  (~13 min of logged work per case, 18.6 h per day for ~40 workers). Capacity is
+  therefore not a bottleneck. **D4 (staff absence) would only bite if almost the whole
+  team were absent**, so it stays deprioritised. D1/D2/D3/D6 don't depend on worker
+  capacity. The scarce resource for triage is the escalation team (Phase 6).
+- **Open-case level:** the median matches, but the log's spread (p10–p90 1,507–2,343)
+  comes from month-to-month swings in arrivals. The weekly arrival profile is
+  stationary, so the simulated spread is narrower (1,851–1,964). Acceptable for one-shock
+  episodes; seasonal level could become a scenario parameter later.
+- **Stage-level gaps** (cycle time is fine overall): validation visit median 0.50 vs
+  0.86 d, incomplete median 1.83 vs 1.09 d. These come from sampling the waits within a
+  visit independently; to look at if a disruption targets these stages specifically.
+- **BPI2012 portability:** mined, simulated and validated with the same code. KS 0.035;
+  outcomes within 2 pp; open cases 731 vs 726; cycle-time p50 / p90 0.91 / 27.0 vs
+  0.81 / 30.5 d.
 
 ### Phase 4 — Q(t), Loss and recovery tracking ⬜
 - **`loan_model/metrics.py`:** on-track status, Q(t), exact Loss, penalties.

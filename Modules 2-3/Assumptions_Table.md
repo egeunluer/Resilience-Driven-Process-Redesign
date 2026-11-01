@@ -8,34 +8,41 @@ reward, with its value or range and where it comes from. Kept up to date as the
 chosen by us but derived from mined data; *literature*: taken from cited work;
 *assumed*: our choice, always swept in the sensitivity analysis.
 
-Status: values marked *(prelim.)* come from the first profiling pass and will be
-replaced by the output of `loan_model/mine_bpic2017.py` (Phase 2).
+Status: section 1 is mined (Phase 2). Sections 3–4 get their ranges in Phases 5–6.
 
 ## 1. Base process (mined)
+
+All values below are written by `loan_model/mine_stage_model.py` into
+`Module 1/artifacts/bpic2017_stage_model.json` (mapping: `bpic2017_activity_map.json`).
+Local time zone Europe/Amsterdam (the log stores UTC).
 
 | Parameter | Value | Source | Rationale / note |
 |---|---|---|---|
 | Cases | 31,509 (2016-01-01 – 2017-02-01) | mined | full log, all A_/O_/W_ events |
-| Arrival rate | 86.3 cases/day *(prelim.)*, hour-of-week profile | mined | from `A_Create Application` timestamps |
-| Online share | 0.65 *(prelim.)* | mined | applications created by `User_1`; all go through `W_Handle leads` |
-| Offers per case | 1: 73%, 2: 21%, 3: 4%, 4+: 2% *(prelim.)* | mined | `O_Create Offer` count per case |
-| Offer channel | mail+online vs online only (`O_Sent (online only)` 5.7% of cases) | mined | alternative channel used by *substitute* (D1) |
-| Customer response delay (offer sent → returned) | median 7.8 d, p90 18.6 d *(prelim.)* | mined | resource-free wait, empirical quantiles |
-| Offer expiry | 30 days after last offer sent | mined | 76% of `A_Cancelled` are by `User_1`, 30.7 d (p10–p90 30.5–30.9) after last `O_Sent` |
-| Incomplete documents per validation round | 23,055 / 38,816 rounds *(prelim.)* | mined | `A_Incomplete` → `W_Call incomplete files` → `A_Validating` loop |
-| Documents back after incomplete | median 1.0 d, p90 7.0 d *(prelim.)* | mined | `A_Incomplete` → next `A_Validating` |
-| Fraud check | 1.0% of cases, 38 workers, mean 143 min work | mined | `W_Assess potential fraud`; outcome mostly Denied |
-| Final outcome | Pending 54.7%, Cancelled 33.1%, Denied 11.9% | mined | last of A_Pending / A_Cancelled / A_Denied |
-| W_ work durations | per (resource, activity), minutes | mined | Module 1 (`bpi2017.json`), true start/complete pairs |
-| Workforce | ~145 workers, ~38 active per weekday, weekdays only | mined | qualified pairs from Module 1; calendars |
-| Cycle time | median 19.1 d, p90 35.1 d | mined | validation target for the base simulator |
-| Open cases | ~1,900 (1,329–2,486) | mined | validation target, warm-up length |
+| Arrival rate | 86.2 cases/day, 168 hour-of-week rates | mined | first event per case; `weekly_rates` from `mine_arrival_profile.py` |
+| Online share | 0.648 | mined | `A_Create Application` by `User_1` |
+| Stages | intake → complete → await_customer → validation ⇄ incomplete → accepted / denied / cancelled | mined (mapping by hand) | entry milestones `A_Create Application`, `A_Concept`, `A_Complete`, `A_Validating`, `A_Incomplete`, `A_Pending` / `A_Denied` / `A_Cancelled` |
+| Routing | per stage and visit number (1, 2, 3+), e.g. await_customer → validation 0.699 / cancelled 0.297; validation (1st) → incomplete 0.686 / accepted 0.209 / denied 0.102 | mined | `exits_by_visit`; fraud-flagged validations route separately (55% denied) |
+| Work | active sessions (start/resume → suspend/complete/abort) per worker and work item, e.g. `W_Validate application` median 2.1 min, p90 17.9 min | mined | **not** Module 1's start→complete pairing, which includes days of suspension in this log |
+| Resource-free waits | per (stage, next stage): initial delay, gaps between sessions, tail | mined | e.g. customer return: await_customer → validation visit median 7.8 d, p90 18.0 d |
+| Offers per case | 1: 72.8%, 2: 20.9%, 3: 4.3%, 4+: 2.0% | mined | `O_Create Offer` |
+| Offer channel | mail+online 95.1%, online only 4.9% | mined | alternative channel used by *substitute* (D1) |
+| Offer expiry timer | 30.7 d after the last offer sent (p10–p90 30.5–30.9) | mined | explains 85% of await_customer → cancelled exits; **BPI2012 shows the same 30.7-day rule** |
+| Fraud check | 0.62% of validation visits | mined | `W_Assess potential fraud`, 34 qualified workers |
+| Workers | 145 human workers; qualified per work item: 78–124; mean active-day share 0.28 (≈ 40 active per working day) | mined | ≥ 3 sessions per work item to count as qualified |
+| Calendar | Mon–Sat, 07:00–21:00 local; 6.8% of sessions on weekends; daily presence scaled by weekday share | mined | 1st / 99th percentile of session start hours |
+| Wait measurement | waits ending in a session measured and replayed in working time | imposed | avoids counting off-hours twice (Phase 3 validation: cycle-time median +14% without it) |
+| Dispatcher | fastest free qualified worker, FIFO per work item | imposed | not a decision of the agent; strongest allocation rule found on Consulta |
+| Warm-up | 40 days (95% of steady-state open cases by day 35) | imposed | ~1.1 s per episode |
+| Final outcome | accepted 54.7%, cancelled 33.1%, denied 11.9% | mined | validation target |
+| Cycle time | median 19.1 d, p90 35.0 d | mined | validation target |
+| Open cases | median 1,937 (p10 1,507, p90 2,343) | mined | daily sample; validation target and warm-up length |
 
 ## 2. Resilience measure (imposed, grounded)
 
 | Parameter | Value | Source | Rationale / note |
 |---|---|---|---|
-| Stage deadline `D_k` | p90 of case age when leaving stage k | imposed | "on track" if age ≤ `D_k` of current stage |
+| Stage deadline `D_k` | p90 of case age when leaving stage k: intake 7.8 min, complete 3.6 d, await_customer 32.8 d, validation 28.4 d, incomplete 35.5 d | imposed (from mined ages) | "on track" if age ≤ `D_k`; intake's 7.8 min is too tight to be meaningful, a floor is decided in Phase 4 |
 | Q(t) | share of open cases on track | imposed | leading indicator, reacts at once, uses all open cases |
 | Q_base | mean Q(t) in undisrupted runs (≈0.9 by construction) | imposed | calibrated, seeds 0–15 |
 | Loss | ∫ max(0, Q_base − Q(t)) / Q_base dt | literature | recovery triangle (corpus P43, P35) |
