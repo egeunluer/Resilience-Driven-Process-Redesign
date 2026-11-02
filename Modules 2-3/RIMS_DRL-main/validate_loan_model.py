@@ -18,7 +18,7 @@ from collections import Counter
 
 import numpy as np
 
-from loan_model.simulator import Simulator, StageModel
+from loan_model.simulator import Simulator, StageModel, top_k_pool
 
 WARMUP, WINDOW = 45, 105
 
@@ -82,8 +82,12 @@ def main():
     ap.add_argument('--seeds', type=int, nargs='+', default=[0, 1, 2])
     ap.add_argument('--days', type=int, default=240)
     ap.add_argument('--out', help='write the comparison as JSON')
+    ap.add_argument('--pool-k', type=int, help='constrained pool: k most active workers per work item')
     args = ap.parse_args()
     sm = StageModel(args.model)
+    if args.pool_k:
+        sm = StageModel(sm.m, pool=top_k_pool(sm.m, args.pool_k))
+        print(f'constrained pool: {len(sm.workers)} workers (top {args.pool_k} per work item)')
     vt = sm.m['validation_targets']
     sims, walls = [], []
     for s in args.seeds:

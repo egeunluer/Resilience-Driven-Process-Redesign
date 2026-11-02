@@ -42,13 +42,17 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 
 | Parameter | Value | Source | Rationale / note |
 |---|---|---|---|
-| Stage deadline `D_k` | p90 of case age when leaving stage k: intake 7.8 min, complete 3.6 d, await_customer 32.8 d, validation 28.4 d, incomplete 35.5 d | imposed (from mined ages) | "on track" if age ≤ `D_k`; intake's 7.8 min is too tight to be meaningful, a floor is decided in Phase 4 |
+| Stage deadline `D_k` | p90 of case age when leaving stage k, floor 24 h: intake 1 d, complete 3.6 d, await_customer 32.8 d, validation 28.4 d, incomplete 35.5 d | imposed (from mined ages) | "on track" if age ≤ `D_k`; the floor only changes intake (7.8 min) |
 | Q(t) | share of open cases on track | imposed | leading indicator, reacts at once, uses all open cases |
-| Q_base | mean Q(t) in undisrupted runs (≈0.9 by construction) | imposed | calibrated, seeds 0–15 |
-| Loss | ∫ max(0, Q_base − Q(t)) / Q_base dt | literature | recovery triangle (corpus P43, P35) |
+| Q_mean | 0.904 (daily sd 0.009) in undisrupted runs | imposed | calibrated, seeds 0–15 × 120 days |
+| Q_ref | 0.890 (full pool) / 0.886 (top-3 pool) = 5th percentile of daily-mean Q without disruption | imposed | Loss and recovery threshold; below the mean, normal noise would count as Loss |
+| Resource pool | working default: top 3 workers per work item (16 workers, 36% utilised) | imposed | constrained pool; still passes validation (9/9) |
+| Loss | ∫ max(0, Q_ref − Q(t)) / Q_ref dt | literature | recovery triangle (corpus P43, P35); ~12 s/day without disruption |
+| Hard penalty | expiries caused by delay (timer wins the race) | imposed | baseline 1.4/day; customers who never respond are not penalised |
 | Loss_base[e] | do-nothing Loss per scenario | imposed | normalisation, like CPL_base |
-| Recovery tolerance | Q (1 working-day mean) ≥ Q_base − tol, tol TBD | assumed | swept |
-| Episode horizon cap | 60 days after onset | assumed | |
+| Recovery | disruption over, all blocked steps done, 24 h rolling Q ≥ Q_ref | imposed | 3-day full work stop: recovery after 4.2 d |
+| Episode horizon | fixed 50 days after onset | imposed | late harm arrives by day ~40 (D2); recovery time reported separately |
+| Customer patience β | not implemented (deferred option) | assumed | P(cancel) = 1 − exp(−β · disruption delay); β = 0 is the current model |
 
 ## 3. Disruption layer (assumed, swept)
 
@@ -56,7 +60,8 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 |---|---|---|---|---|
 | D1 | offer dispatch outage: rate, MTTR | TBD | assumed | uncertain repair time |
 | D2 | telephony outage: rate, MTTR | TBD | assumed | affects `W_Call after offers`, `W_Call incomplete files` |
-| D3 | incomplete-documents surge `m` | TBD | assumed | `p_inc × (1 + m)`, base `p_inc` mined |
+| D3 | incomplete-documents surge `m`, duration | level 1: m 0.25, 72–168 h; level 2: m 0.5, 120–240 h | assumed | `p_inc × (1 + m)` capped at 0.95, base `p_inc` mined |
+| D3 | portal upload delay added to the incomplete loop | level 1: 24–96 h; level 2: 72–168 h | assumed | makes D3 harmful (without it Loss ≈ 0.006: base `p_inc` is already 0.69 on the first round) |
 | D4 | absent share of team, absence length | TBD | assumed | added after D1–D3, D6 |
 | D5 | fraud-flag surge factor | TBD | assumed | base rate mined |
 | D6 | SLA-risk alert threshold (slack) | TBD | assumed | expiry clock is mined |
@@ -66,8 +71,8 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 | Action | Cost κ (× c_p) | Success / effect | Source | Note |
 |---|---|---|---|---|
 | do-nothing | 0 | waits for natural resolution | — | |
-| retry | 0.05 | q_retry ≈ 0 during hard outage, ~0.6 transient | assumed | ordering: literature (Russell 2006, Lerner 2010, P20) |
-| reassign | 0.15 | front of queue, fastest free qualified worker | assumed | delays other cases (coupling) |
+| retry | 0.05 | succeeds only once the outage is over; documents re-fetch 0.4; at most 2 per case | assumed | ordering: literature (Russell 2006, Lerner 2010, P20); cap keeps episodes short |
+| reassign | 0.15 | D3: skips the portal delay, calls to the front of the queue | assumed | delays other cases (coupling) |
 | substitute | 0.30 | alternative channel; rework prob r_sub | assumed | D1: online-only send (channel mined) |
 | escalate | 0.50 | q_esc ≈ 0.95; senior pool capacity 1–3 | assumed | masked when no slot free; size vs fraud team |
 | c_p (reference penalty) | 1 (relative) | — | literature | Metzger et al. 2020: relative costs, κ swept 0.1–0.5 |

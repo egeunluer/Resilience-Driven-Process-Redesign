@@ -11,9 +11,9 @@ White-box resilience engine on the original BPIC2017 log. Design rationale:
 | 1 | Small triage proof of concept | ✅ passed on 3 of 3 training seeds |
 | 2 | Mine the full-log stage model | ✅ BPIC2017 mined; BPI2012 mined with the same code |
 | 3 | Base simulator + validation against the log | ✅ BPIC2017 9/9 checks; BPI2012 runs unchanged |
-| 4 | Q(t), Loss and recovery tracking | ⬜ |
-| 5 | Disruptions D1, D2, D3, D6 (then D4, D5) | ⬜ |
-| 6 | Recovery actions, scarce resources, costs | ⬜ |
+| 4 | Q(t), Loss and recovery tracking | ✅ exact tracker, calibrated Q_ref, recovery tested |
+| 5 | Disruptions D1, D2, D3, D6 (then D4, D5) | ✅ fixed 50-day episodes; customer patience deferred |
+| 6 | Recovery actions, scarce resources, costs | ✅ implemented and checked with fixed policies |
 | 7 | Environment | ⬜ |
 | 8 | Calibration and baselines | ⬜ |
 | 9 | Training | ⬜ |
@@ -286,7 +286,7 @@ The mining script writes `Module 1/artifacts/bpic2017_stage_model.json` (planned
   outcomes within 2 pp; open cases 731 vs 726; cycle-time p50 / p90 0.91 / 27.0 vs
   0.81 / 30.5 d.
 
-### Phase 4 — Q(t), Loss and recovery tracking ⬜
+### Phase 4 — Q(t), Loss and recovery tracking ✅
 - **`loan_model/metrics.py`:** on-track status, Q(t), exact Loss, penalties.
 - **Recovery:**
   - the disruption has ended;
@@ -294,20 +294,209 @@ The mining script writes `Module 1/artifacts/bpic2017_stage_model.json` (planned
   - Q(t), averaged over one working day, is back at or above Q_base − tolerance.
 - **Episode horizon:** capped at 60 days after onset.
 
-### Phase 5 — Disruptions ⬜
+**Done (outputs):**
+- `loan_model/metrics.py` (`QTracker`): an observer of the simulator. It tracks Q(t)
+  exactly; deadline crossings sit in a heap and are processed lazily.
+  - Q, Loss and the 24 h rolling Q match brute-force integrals on fine grids (to the
+    second, and to 5 decimals).
+  - It counts expiries caused by delay (the timer won the race).
+  - `hit()` / `clear_hit()` mark blocked steps.
+- `calibrate_loan_resilience.py` → `Module 1/artifacts/bpic2017_resilience_calibration.json`
+  (16 seeds × 120 days, 1.5 min).
+
+**Decisions (made with data):**
+1. **Q(t) as agreed:** case age ≤ D_k of its current stage, over all open cases.
+   Compared with three alternatives on a 3-day full work stop (day 70, steady state):
+
+   | Variant | Daily noise (sd) | Drop, 1-day stop | Drop, 3-day stop | S/N (3-day) |
+   |---|---|---|---|---|
+   | age, all open (chosen) | 0.0073 | 0.033 | 0.066 | 9.1 |
+   | time in stage, all open | 0.0094 | 0.035 | 0.079 | 8.5 |
+   | age, bank stages only | 0.0117 | 0.060 | 0.072 | 6.1 |
+   | time in stage, bank stages only | 0.0182 | 0.061 | 0.097 | 5.3 |
+
+   Restricting Q to the bank's own stages makes it drop more but also adds as much noise.
+   About 1,300 of the ~1,900 open cases wait on the customer, so they dilute Q; this is
+   a property of the process.
+2. **Deadline floor of 24 h:** only affects intake (p90 age at exit = 7.8 min).
+3. **Loss below a normal-operation floor `Q_ref`**, not below the mean:
+   - Without disruption, Q has mean 0.904 and daily sd 0.009.
+   - **Q_ref = 0.890**, the 5th percentile of daily means.
+   - **Loss = ∫ max(0, Q_ref − Q) / Q_ref dt.**
+   - Baseline Loss without disruption is ~12 s per day, i.e. noise barely counts.
+4. **Hard penalty only for expiries caused by delay**, the 30-day timer firing because a
+   case was held up. Baseline: 1.4 per day, from customer responses sampled just past the
+   timer. Customers who never respond are not penalised.
+5. **Recovery:**
+   - the disruption is over;
+   - every blocked step has been carried out (cleared by the disruption layer; leaving the
+     stage clears it as a fallback);
+   - the 24 h rolling Q is ≥ Q_ref.
+   
+   Clearing hits only when the case leaves its stage was too strict: cases in validation /
+   incomplete wait on the customer for weeks.
+
+**End-to-end check** (Monday work stop, 4 seeds):
+
+| Stop | Recovery after | Loss at recovery | Delay expiries |
+|---|---|---|---|
+| 0 d | immediately | 0 | 0–1 |
+| 1 d | 1.6 d | 0.003 Q-days | 1–5 |
+| 3 d | 4.2 d | 0.046 Q-days | 3–7 |
+
+**Open point:** some effects come after recovery (delayed cases crossing deadlines later,
+expiries ~30 days on). The expiry count can be followed past the episode end in the
+evaluation (Phase 8) if it matters.
+
+### Phase 5 — Disruptions ✅
 - **`loan_model/disruptions.py`:** D1, D2, D3, D6 first; one scenario per episode,
   cycling through types and strengths.
 - **Failure hook:** a failed step creates a decision event, and the case waits until the
   agent decides.
 
-### Phase 6 — Recovery actions, scarce resources, costs ⬜
+**Done so far:**
+- **Constrained pool option** (`StageModel(..., pool=top_k_pool(model, k))`). It still
+  passes validation down to the top-3 workers per work item:
+
+  | Pool | Workers | Utilisation | Cycle time p50 / p90 | Checks passed |
+  |---|---|---|---|---|
+  | full | 145 | 4% | 20.4 / 36.4 d | 9/9 |
+  | top 10 per work item | 39 | 11% | 20.1 / 36.4 d | 9/9 |
+  | top 5 per work item | 24 | 19% | 20.8 / 36.6 d | 9/9 |
+  | **top 3 per work item** (working default) | **16** | **36%** | 20.8 / 36.4 d | 9/9 |
+  | top 2 per work item | 10 | 63% | 21.2 / 36.9 d | 8/9 |
+
+  With the top-3 pool, queues start to form (8–9% of requests wait over an hour).
+  Q_ref is still from the full pool and must be recalibrated for the chosen pool.
+- `Module 1/artifacts/bpic2017_disruptions.json`: log-specific scenarios, 2 levels each.
+  - **D1 offer dispatch outage:** blocks the complete → await_customer transition.
+  - **D2 telephony outage:** blocks `W_Call after offers` and `W_Call incomplete files`.
+  - **D3 missing-documents surge:** validation → incomplete × (1 + m).
+  - **D6 SLA-risk alert:** a blocked, waiting case gets a second decision at 48 h slack.
+  - Outage lengths come from a short/long mixture the agent never sees.
+- `loan_model/disruptions.py`: generic mechanisms (outage, routing surge, alert).
+- **Simulator hooks:** blocked steps create `Decision`s, answered by a policy or
+  queued in `sim.pending` for the environment.
+- `loan_model/episode.py`: warm-up, onset at a random time in the following week, run
+  until recovery (60-day cap).
+
+**Smoke test (do-nothing, top-3 pool, 6 seeds):**
+- Every scenario creates 200–700 decisions on 130–690 cases per episode, which meets
+  the "many concurrent cases" requirement.
+- All episodes recover; an episode takes ~1.3 s.
+
+**Problem found — impact:**
+- Up to the declared recovery, Loss ≈ 0 for everything except D1 level 2. The delays are
+  1–3 days, the age deadlines are 28–35 days, so delayed cases only cross their
+  deadlines weeks after the episode has ended.
+- Measured over a fixed 45 days after onset (8 paired seeds, vs no disruption):
+
+  | Scenario | Extra Loss | Extra delay expiries | Extra late completions |
+  |---|---|---|---|
+  | D1:2 | +0.186 ± 0.143 Q-days | +1.0 | +17 |
+  | D2:2 | +0.098 ± 0.060 Q-days | +7.8 | +58 |
+  | D3:2 | +0.012 ± 0.033 (n.s.) | +2.9 | +18 |
+
+  The harm exists for D1 and D2 but arrives late. D3 is close to harmless in this model.
+**How long the effects last** (strongest levels, 12 paired seeds, 70 days, do-nothing):
+
+| Scenario | When the harm happens | 95% of total harm reached by |
+|---|---|---|
+| D1:2 | week 1 | day 6 |
+| D2:2 | weeks 5–6, when delayed cases reach their deadlines | day 40 |
+| D3:2 | weeks 3–6 | day 33 |
+
+From week 7 on, the differences are only noise.
+
+**Decisions:**
+1. **Episodes end at a fixed horizon of 50 days after onset**, not at recovery. 50 rather
+   than 45 days gives margin for the longest outages, which shift D2's tail by a few days.
+   Time to recover is still reported. Decisions happen only during the disruption (and
+   alerts); the episode then runs on to the horizon so late harm is counted.
+2. **D3 stays as it is for now.** Its effect is small (n.s. at 45 days).
+3. **Q_ref recalibrated for the top-3 pool:** 0.886 (mean 0.901, daily sd 0.010;
+   `bpic2017_pool3_resilience_calibration.json`).
+
+**Deferred option (documented, not implemented): customer patience.** Today, whether a
+customer returns the offer or cancels is drawn on stage entry, regardless of delay, so a
+disruption delays cases but never loses a customer. The option:
+- each case accumulates "disruption delay": time blocked, waiting for an outage to end,
+  retrying, or queuing for escalation;
+- when the block ends, the customer cancels with probability 1 − exp(−β · delay); the case
+  ends as `END_cancelled` and counts as a lost customer (hard penalty);
+- β is assumed and swept (e.g. 0 / 5 / 15 % per day of delay); β = 0 is the current model;
+- rough anchor: about 24% of BPIC2017 cancellations are made by a person rather than the
+  timer, and their timing relative to waiting time can be mined (observational, so β
+  stays a swept assumption).
+
+Effect if switched on: harm appears during the disruption instead of weeks later, D2/D3
+matter more, and the agent's actions change how many customers are lost. To reconsider
+if the agent's learning signal turns out too weak with the 50-day horizon alone.
+
+### Phase 6 — Recovery actions, scarce resources, costs ✅
 - **`loan_model/recovery.py`:**
   - **do-nothing / retry / substitute** as in the proof of concept.
   - **reassign:** the case moves to the front of its queue with the fastest free qualified worker.
   - **escalate:** uses the scarce senior pool (capacity 1–3); masked when no slot is free.
 - **Costs:** κ = retry 0.05, reassign 0.15, substitute 0.30, escalate 0.50 (× c_p, swept).
 
-### Phase 7 — Environment ⬜
+**Done (outputs):**
+- `"recovery"` block in `bpic2017_disruptions.json` (all values assumed, swept):
+  - **costs** κ: retry 0.05, reassign 0.15, substitute 0.30, escalate 0.50;
+  - **allowed actions** per failure type; an SLA-risk alert inherits the actions of the
+    failure that blocked the case;
+  - **retry:** 1 working hour; a re-fetch finds missing documents with p = 0.4;
+  - **substitute:**
+    - D1: online-only channel, 20% chance the offer has to be re-sent 1–3 days later;
+    - D2: written contact, customer responds 1–3 days later;
+  - **escalate:** senior team, 2 shared slots, 0.5–2 working hours per case, success 0.95,
+    masked when no slot is free;
+  - **reassign:** the case's incomplete-file calls go to the front of the queue.
+- **Simulator:**
+  - `attach_disruption()`, `allowed_actions()` (the action mask);
+  - the action effects (`_recover`, `_documents_decision`, `_escalate`);
+  - the escalation team as a shared `simpy.Resource`;
+  - action-cost accounting.
+- **Bug fixed:** results changed between processes. The dispatcher looped over each
+  worker's work items as a *set*, whose order depends on the per-process hash seed, and
+  ties between equally old requests are common (many waits end exactly at 07:00). Now
+  sorted. Results are identical across hash seeds, and identical policies give
+  identical results.
+
+**Fixed-policy check (level 2, top-3 pool, 8 paired seeds, 50-day horizon):**
+
+| Scenario | do-nothing Loss | Best action | Best Loss (vs do-nothing) |
+|---|---|---|---|
+| D1 offer outage | 0.124 | substitute | 0.006 (−0.118 ± 0.117) |
+| D2 telephony outage | 0.053 | substitute | 0.017 (−0.037 ± 0.050, n.s.) |
+| D3 documents surge | 0.006 | none helps | no difference |
+
+Other findings:
+- **Escalation** helps a little but is capped by its 2 slots (~65 escalations per episode).
+- **Retrying every hour during a long outage** brings nothing and creates up to 24,000
+  decisions per episode.
+
+**Follow-up (decided with the user):**
+- **Retries capped at 2 per case** (`retry.max_per_case`; retry is masked afterwards).
+  Decisions per episode drop from up to 24,000 to ~1,100 (D1) and ~2,100 (D2).
+- **D3 made stronger.** The base incomplete share is already 0.69 on the first round, so
+  raising it changed little. The faulty portal now also holds up the customer's upload
+  (level 1: 24–96 h, level 2: 72–168 h). Reassign means a caseworker chases the
+  documents directly, so the case skips that delay.
+- **Rerun (level 2, 8 paired seeds):**
+
+  | Scenario | do-nothing Loss | Best fixed action | Its Loss (vs do-nothing) |
+  |---|---|---|---|
+  | D1 offer outage | 0.124 | substitute | 0.006 (−0.118 ± 0.117) |
+  | D2 telephony outage | 0.053 | substitute | 0.017 (−0.037 ± 0.050, n.s.) |
+  | D3 documents surge | 0.048 | retry (re-fetch) | 0.010 (−0.039 ± 0.032) |
+
+  Reassign also helps on D3 (0.016), and retry no longer hurts D1/D2 much. Each scenario
+  now has a different best action, which is what the agent has to learn.
+- **Reward scale:** settled in Phase 7, below.
+- **Variance from outage length:** settled in Phase 8 (fixed length cycle), below.
+
+### Phase 7 — Environment ✅
 - **`loan_env.py`:** gymnasium Env, MaskablePPO compatible. `reset` runs the warm-up, then
   the scenario, then runs until the first decision.
 - **Observation:**
@@ -316,11 +505,95 @@ The mining script writes `Module 1/artifacts/bpic2017_stage_model.json` (planned
   - Q(t) / Q_base;
   - **system urgency aggregates** (Phase 1 lesson);
   - for the deciding case: stage, failure type, slack, days left until expiry, attempts so far.
-- **Reward:** `−(w · ΔLoss / Loss_base + Σ κ · c_p + penalties)`.
+- **Reward** for the step between decision t and the next one:
+  `r_t = −( w · ΔLoss_t / Loss_base[e, ℓ]  +  κ_a · c_p[e] )`, with γ = 1.
+  - **Loss term:** ΔLoss_t is the Loss accrued since the last decision. It is divided by
+    the do-nothing Loss of the same scenario e and outage length ℓ (Phase 8), so a
+    do-nothing episode sums to −w and a perfect one to 0, whatever the scenario. The
+    Loss after the last decision, up to day 50, goes into the last step's reward.
+  - **Cost term:** `c_p[e] = 1 / N_e`, where N_e is the mean number of decisions per
+    episode under do-nothing. Acting on every case then costs κ in total: substitute
+    everywhere ≈ 0.3, escalate everywhere ≈ 0.5, retry ≈ 0.05. Costs are then on the
+    same 0–1 scale as the normalised Loss. With the Phase 6 numbers (w = 1):
+    - D1: substitute everywhere ≈ 0.05 Loss + 0.17 cost = 0.22, against 1.0 for doing nothing;
+    - D2: substitute ≈ 0.31 + 0.35 = 0.66, a real trade-off;
+    - D3: retry ≈ 0.20 + 0.05 = 0.25.
+  - **w** sets resilience against cost. Default 1, swept in Phase 11 for the Pareto front.
+  - **No separate expiry penalty.** Expiries are ~70 per episode under every policy:
+    almost all are the normal 30-day expiry, not caused by the disruption. Their harm
+    is already in Loss.
+  - Reward normalisation (VecNormalize) is kept on top, as in the proof of concept.
 - **Episode-end info:** `info['resilience']`, for the existing callbacks.
 
+
+**Done (outputs):**
+- **`loan_model/episode.py`:** an `Episode` class, shared by `run_episode` (fixed policy)
+  and the environment:
+  - warm-up, onset and fixed horizon;
+  - hourly recovery check and the lowest 24 h rolling Q;
+  - `run_to_decision()` stops the simulation exactly when a decision is pending.
+  - **Onset now drawn in working time:** an outage that falls entirely at night blocks
+    nothing and would give an episode with no decision. Episodes that still have no
+    decision are redrawn and counted (`empty_episodes`).
+- **`loan_model/disruptions.py`:** an optional fixed `duration_h` (for the Phase 8 cycle);
+  cell keys such as `D1_offer_outage:2:24h`.
+- **Simulator:**
+  - a `decision_ready` event, so the environment can wait for the next decision;
+  - the case's offer-expiry time (`expiry_at`), which the agent observes.
+- **`loan_env.py`:** `LoanEnv` (gymnasium, MaskablePPO `action_masks()`):
+  - **actions:** 5 (do-nothing, retry, reassign, substitute, escalate);
+  - **observation:** 33 features in [−1, 1]:
+    - disruption on, time since onset, time since its end;
+    - working hours, hour of day;
+    - free escalation slots, pending decisions, blocked cases;
+    - share of blocked cases with slack < 2 d and 2–7 d;
+    - Q / Q_ref and rolling Q / Q_ref;
+    - open cases;
+    - scenario, cause and alert flags;
+    - for the case: stage, slack, age, time to offer expiry, attempts, retries left,
+      validation round, offers, fraud flag;
+  - **reward:** as above. Needs `Loss_base` and `N` per cell from Phase 8 (or `norm=`);
+    the environment refuses to start without them;
+  - **scenario cycle** `(scenario, level, duration_h)` with `shock_cycle_index`, as
+    `EvalPolicyCallback` expects;
+  - **episode end:** `info['resilience']` and `last_episode_info` with objective,
+    loss_ratio, cost_ratio, Loss, time to recover, min rolling Q, expiries, decisions and
+    counts per action. `mean_cycle_time` returns the objective, so `EvalPolicyCallback`
+    can select on it (renamed properly in Phase 9).
+  - **After an action, the case acts on it at once.** An escalation then holds its slot
+    before the mask of another decision at the same instant is computed.
+
+**Checks (placeholder normalisation from the Phase 6 level-2 do-nothing runs):**
+- **Same results as the fixed-policy runner:** do-nothing through the environment gives
+  exactly the Loss and decision count of `run_episode` (3 scenarios).
+- **Rewards add up:** the per-step rewards sum to −objective.
+- **Masks and observations:** masks never empty, observations always in bounds.
+- **Reproducible:** same seed and actions give an identical episode, also across hash seeds.
+- **Speed:** ~2.8 s per episode, ~250 steps/s with MaskablePPO, so ~35 min per 500k steps.
+- **MaskablePPO + VecNormalize + `ResilienceCallback`** run without errors.
+- **Gymnasium's `check_env` does not apply:** it resets twice expecting the same episode
+  (the cycle moves on) and steps with masked actions (rejected on purpose).
+
 ### Phase 8 — Calibration and baselines ⬜
-- **`calibrate_loan_resilience.py`:** Q_base and the do-nothing `Loss_base` per scenario.
+- **Fixed outage-length cycle** (like the demand-spike magnitudes in the previous
+  approach). In training, the disruption length is no longer drawn from the mixture.
+  Episodes cycle through a fixed grid of (scenario, length) pairs, e.g.:
+  - D1, D2: 8, 24, 72, 168 h;
+  - D3 surge: 72, 168, 240 h.
+
+  The agent still does not observe the length: it only sees the elapsed time, so
+  "wait or substitute?" remains a decision under uncertainty. The cycle:
+  - covers short and long outages equally in every batch;
+  - lets `Loss_base` be calibrated per (scenario, length), so the reward is normalised
+    against the matching do-nothing episode, which removes most of the length-driven
+    variance;
+  - makes evaluation and benchmark episodes comparable cell by cell, with paired seeds
+    per cell.
+
+  The random lengths of the mixture are kept as a robustness check on the benchmark
+  (lengths between and beyond the grid).
+- **`calibrate_loan_resilience.py`:** Q_base, `Loss_base[e, ℓ]` and `N_e` (decisions per
+  episode) under do-nothing for each cell of the cycle (seeds 0–15).
 - **`baselines_loan.py`:**
   - do-nothing;
   - always-X;

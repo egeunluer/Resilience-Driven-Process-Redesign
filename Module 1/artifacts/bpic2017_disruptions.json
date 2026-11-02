@@ -1,0 +1,237 @@
+{
+  "_doc": "Log-specific disruption scenarios for loan_model/disruptions.py (Phase 5). Mechanisms are generic (outage, routing_surge); this file maps them onto BPIC2017 stages, transitions and work items. All intensities are assumed and swept (Modules 2-3/Assumptions_Table.md section 3). Durations in hours; outage lengths come from a short/long mixture the agent never sees.",
+  "scenarios": {
+    "D1_offer_outage": {
+      "mechanism": "outage",
+      "failure_type": "offer_dispatch_outage",
+      "blocks": {
+        "transitions": [
+          [
+            "complete",
+            "await_customer"
+          ]
+        ]
+      },
+      "_doc": "Offer dispatch system down: cases that finish the complete stage cannot get their offer sent.",
+      "levels": {
+        "1": {
+          "duration_h": {
+            "mixture": [
+              {
+                "p": 0.5,
+                "uniform": [
+                  4,
+                  24
+                ]
+              },
+              {
+                "p": 0.5,
+                "uniform": [
+                  24,
+                  72
+                ]
+              }
+            ]
+          }
+        },
+        "2": {
+          "duration_h": {
+            "mixture": [
+              {
+                "p": 0.5,
+                "uniform": [
+                  8,
+                  48
+                ]
+              },
+              {
+                "p": 0.5,
+                "uniform": [
+                  72,
+                  168
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "D2_telephony_outage": {
+      "mechanism": "outage",
+      "failure_type": "telephony_outage",
+      "blocks": {
+        "work_items": [
+          "W_Call after offers",
+          "W_Call incomplete files"
+        ]
+      },
+      "_doc": "Contact-centre telephony down: call sessions cannot start.",
+      "levels": {
+        "1": {
+          "duration_h": {
+            "mixture": [
+              {
+                "p": 0.5,
+                "uniform": [
+                  4,
+                  24
+                ]
+              },
+              {
+                "p": 0.5,
+                "uniform": [
+                  24,
+                  72
+                ]
+              }
+            ]
+          }
+        },
+        "2": {
+          "duration_h": {
+            "mixture": [
+              {
+                "p": 0.5,
+                "uniform": [
+                  8,
+                  48
+                ]
+              },
+              {
+                "p": 0.5,
+                "uniform": [
+                  72,
+                  168
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "D3_documents_surge": {
+      "mechanism": "routing_surge",
+      "failure_type": "documents_missing",
+      "stage": "validation",
+      "exit": "incomplete",
+      "_doc": "Document portal fault: more validations find the file incomplete, and the customer's upload is held up by the faulty portal (upload_delay_h, wall-clock, added to the incomplete visit). Each case routed to incomplete during the surge is a decision.",
+      "levels": {
+        "1": {
+          "magnitude": 0.25,
+          "duration_h": {
+            "uniform": [
+              72,
+              168
+            ]
+          },
+          "upload_delay_h": {
+            "uniform": [
+              24,
+              96
+            ]
+          }
+        },
+        "2": {
+          "magnitude": 0.5,
+          "duration_h": {
+            "uniform": [
+              120,
+              240
+            ]
+          },
+          "upload_delay_h": {
+            "uniform": [
+              72,
+              168
+            ]
+          }
+        }
+      }
+    }
+  },
+  "sla_alert": {
+    "_doc": "D6: a case blocked by a disruption and left waiting gets a second decision when its slack (stage deadline - age) falls to the threshold.",
+    "enabled": true,
+    "failure_type": "sla_risk",
+    "slack_threshold_h": 48
+  },
+  "recovery": {
+    "_doc": "Phase 6: recovery actions. All values assumed and swept (Assumptions_Table.md section 4). Costs are kappa x c_p (c_p = 1). Times in working hours for handling/retry (only working days and hours count), wall-clock hours for customer-side delays.",
+    "actions": [
+      "do_nothing",
+      "retry",
+      "reassign",
+      "substitute",
+      "escalate"
+    ],
+    "kappa": {
+      "do_nothing": 0.0,
+      "retry": 0.05,
+      "reassign": 0.15,
+      "substitute": 0.3,
+      "escalate": 0.5
+    },
+    "allowed": {
+      "offer_dispatch_outage": [
+        "do_nothing",
+        "retry",
+        "substitute",
+        "escalate"
+      ],
+      "telephony_outage": [
+        "do_nothing",
+        "retry",
+        "substitute",
+        "escalate"
+      ],
+      "documents_missing": [
+        "do_nothing",
+        "retry",
+        "reassign",
+        "escalate"
+      ],
+      "_sla_risk": "an SLA-risk alert allows the actions of the failure that blocked the case"
+    },
+    "retry": {
+      "_doc": "Try again after a short delay; during an outage it only succeeds once the service is back. For missing documents: an automatic re-fetch finds them with documents_success_p, so the case skips the incomplete loop. At most max_per_case retries per case (then retry is masked), so an outage cannot be retried hour after hour.",
+      "delay_working_h": 1.0,
+      "documents_success_p": 0.4,
+      "max_per_case": 2
+    },
+    "substitute": {
+      "offer_dispatch_outage": {
+        "_doc": "send the offer through the online-only channel (O_Sent (online only), used for 4.9% of offers in the log); with rework_p the customer misses it and it has to be re-sent later",
+        "rework_p": 0.2,
+        "rework_delay_h": {
+          "uniform": [
+            24,
+            72
+          ]
+        }
+      },
+      "telephony_outage": {
+        "_doc": "contact the customer in writing instead of by phone: the call is skipped but the customer responds later",
+        "extra_delay_h": {
+          "uniform": [
+            24,
+            72
+          ]
+        }
+      }
+    },
+    "escalate": {
+      "_doc": "a senior team handles the step manually (offer dispatch, call, or completing the file). Scarce: capacity slots shared by all cases, masked when none is free. Capacity sized against the real fraud team (W_Assess potential fraud: 34 qualified workers, ~1% of cases).",
+      "capacity": 2,
+      "handling_working_h": {
+        "uniform": [
+          0.5,
+          2.0
+        ]
+      },
+      "success_p": 0.95
+    },
+    "reassign": {
+      "_doc": "missing documents: a caseworker chases the documents directly (the case skips the portal delay) and the case's incomplete-file calls go to the front of the queue (fastest free qualified worker), ahead of other cases."
+    }
+  }
+}
