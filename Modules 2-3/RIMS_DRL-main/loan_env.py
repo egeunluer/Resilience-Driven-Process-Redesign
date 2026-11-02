@@ -8,12 +8,14 @@ into the documents loop during a surge, or an SLA-risk alert -- with a recovery 
 the simulation then runs on until the next decision or the horizon.
 
 Reward between two decisions:
-    r = -( w * dLoss / Loss_base[cell]  +  kappa[a] * c_p[cell] ),  c_p = 1 / N[cell]
+    r = -( w * dLoss / Loss_base[e]  +  kappa[a] * c_p[e] ),  c_p = 1 / N[e]
 dLoss is the Loss accrued since the previous decision (the Loss after the last
 decision, up to the horizon, goes into the last step). Loss_base and N are the
-do-nothing Loss and decisions per episode of the same cell (scenario, level, outage
-length), from calibrate_loan_resilience.py (Phase 8): a do-nothing episode sums to -w,
-and acting on every case costs about kappa in total.
+do-nothing Loss and decisions per episode of scenario e, averaged over its cells of
+the training cycle (calibrate_loan_resilience.py, Phase 8): over the cycle a
+do-nothing episode sums to -w on average, and acting on every case costs about kappa.
+Not per cell: short outages do almost no harm, and their own Loss_base is at the level
+of normal day-to-day noise, which a per-cell normalisation would blow up.
 
 Scenario selection per reset: a fixed `cycle` of (scenario, level, duration_h) cells
 (duration_h None: drawn from the level), stepped through in order like the shock
@@ -25,7 +27,7 @@ import json
 import numpy as np
 from gymnasium import Env, spaces
 
-from loan_model.disruptions import scenario_key
+from loan_model.disruptions import cycle_key, scenario_key
 from loan_model.episode import Episode, HORIZON_DAYS, WARMUP_DAYS
 from loan_model.simulator import StageModel
 
@@ -39,9 +41,9 @@ class LoanEnv(Env):
     def __init__(self, stage_model, disruptions, calibration, cycle, w=1.0, norm=None,
                  warmup_days=WARMUP_DAYS, horizon_days=HORIZON_DAYS):
         """stage_model / disruptions / calibration: paths or dicts. The calibration's
-        "pool" (constrained worker pool) is applied to the stage model. `norm` maps a
-        cell key to {'loss_base': seconds, 'n_decisions': N}; default: the calibration's
-        loss_base_by_scenario."""
+        "pool" (constrained worker pool) is applied to the stage model. `norm` maps
+        cycle_key(scenario, level) to {'loss_base': seconds, 'n_decisions': N}; default:
+        the calibration's loss_base_by_scenario."""
         super().__init__()
         load = lambda x: json.load(open(x)) if isinstance(x, str) else x
         self.cal = load(calibration)
@@ -76,7 +78,7 @@ class LoanEnv(Env):
 
     @staticmethod
     def _key(cell):
-        return scenario_key(*cell)
+        return cycle_key(cell[0], cell[1])
 
     # ------------------------------------------------------------------ episode
     def reset(self, seed=None, options=None):
@@ -92,7 +94,7 @@ class LoanEnv(Env):
                 break
             self.empty_episodes += 1
         else:
-            raise RuntimeError(f'no decision in {EMPTY_RETRIES} episodes of {self._key(cell)}')
+            raise RuntimeError(f'no decision in {EMPTY_RETRIES} episodes of {scenario_key(*cell)}')
         self.ep, self.cell = ep, cell
         n = self.norm[self._key(cell)]
         self.loss_base = n['loss_base']

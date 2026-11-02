@@ -35,6 +35,11 @@ def scenario_key(scenario, level, duration_h=None):
     return key if duration_h is None else f'{key}:{duration_h:g}h'
 
 
+def cycle_key(scenario, level):
+    """Key of a scenario's normalisation pooled over its training-cycle cells."""
+    return f'{scenario}:{level}:cycle'
+
+
 class DisruptionLayer:
     def __init__(self, config, scenario, level, deadlines_s, rng, duration_h=None):
         if isinstance(config, str):

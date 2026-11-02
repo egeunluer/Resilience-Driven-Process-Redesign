@@ -574,7 +574,7 @@ Other findings:
 - **Gymnasium's `check_env` does not apply:** it resets twice expecting the same episode
   (the cycle moves on) and steps with masked actions (rejected on purpose).
 
-### Phase 8 — Calibration and baselines ⬜
+### Phase 8 — Calibration and baselines ✅
 - **Fixed outage-length cycle** (like the demand-spike magnitudes in the previous
   approach). In training, the disruption length is no longer drawn from the mixture.
   Episodes cycle through a fixed grid of (scenario, length) pairs, e.g.:
@@ -601,6 +601,63 @@ Other findings:
   - hand-written rules (SmartPM / P20 style);
   - a Metzger-style binary trigger.
 - **Benchmark:** paired, 64+ episodes.
+
+
+**Done (outputs):**
+- **Training cycle** in `bpic2017_disruptions.json` (`training_cycle`), 11 cells:
+  - D1 and D2 at 8, 24, 72 and 168 h;
+  - D3 surge at 72, 168 and 240 h.
+
+  Plus `robustness_cells`: the same scenarios with the length drawn from level 2.
+- **`calibrate_loan_resilience.py --scenarios`:** do-nothing Loss_base and N per cell
+  (seeds 0–15), plus their mean per scenario over the cycle.
+- **`baselines_loan.py`:** do-nothing, always-X, greedy (myopic and deadline-aware),
+  rule (SmartPM / P20 style), and a paired benchmark on seeds 200+.
+- **Metzger binary trigger:** needs training, so it moves to Phase 9.
+
+**Calibration (do-nothing, top-3 pool, 16 seeds):**
+
+| Cell | 8 h | 24 h | 72 h | 168 h |
+|---|---|---|---|---|
+| D1 offer outage, Loss (Q-days) | 0.005 | 0.005 | 0.008 | 0.497 |
+| D2 telephony outage, Loss (Q-days) | 0.007 | 0.009 | 0.015 | 0.178 |
+| D3 surge (72 / 168 / 240 h), Loss (Q-days) | — | — | 0.016 / 0.026 | 0.063 (240 h) |
+
+- **Short outages are almost harmless.** Up to 72 h, the Loss stays at the level of normal
+  day-to-day noise (~0.01 over 50 days, sd ~0.01): blocked cases are held for at most
+  3 days, and the age deadlines (p90) leave that much slack. Only the week-long outages
+  hurt.
+- **So the reward is normalised per scenario, not per cell.** It uses the cycle mean:
+  D1 0.129, D2 0.052, D3 0.035 Q-days; N = 451 / 590 / 474. Dividing by a short cell's
+  own Loss_base would blow pure noise up ~100×. Short outages now give small rewards,
+  correctly, because little is at stake.
+- **Pairing and VecNormalize** handle the remaining variance.
+
+**Baseline benchmark (11 cycle cells × 8 seeds, paired; objective = Loss/Loss_base +
+cost/N, do-nothing ≈ 1, lower is better):**
+
+| Policy | Objective | vs do-nothing (95% CI) | Loss part | Cost part |
+|---|---|---|---|---|
+| do-nothing | 1.017 | — | 1.017 | 0 |
+| always retry | 0.914 | −0.10 ± 0.16 | 0.848 | 0.066 |
+| always reassign | 1.013 | −0.00 ± 0.16 | 0.966 | 0.047 |
+| always substitute | 0.608 | −0.41 ± 0.27 | 0.422 | 0.186 |
+| always escalate | 0.774 | −0.24 ± 0.18 | 0.707 | 0.067 |
+| greedy | 0.748 | −0.27 ± 0.25 | 0.717 | 0.032 |
+| **rule** | **0.583** | **−0.43 ± 0.22** | 0.450 | 0.132 |
+
+- **No single policy wins every cell:**
+  - short outages: do-nothing (substituting wastes money);
+  - D1 168 h: substitute (0.49);
+  - D3: retry or escalate.
+
+  Picking the best fixed policy per cell gives ~0.34. That bound knows the outage
+  length, which the agent does not, but it shows the room left above the rule (0.58).
+- **The rule is the baseline to beat.** It is also best on the robustness cells (0.26 vs
+  do-nothing 0.34).
+- **Noise:** with 88 paired episodes, the 95% CI is still ±0.2, driven by the
+  week-long cells. The Phase 9 benchmark should use ≥ 16 seeds per cell (176+ episodes),
+  ~25 min for all baselines.
 
 ### Phase 9 — Training ⬜
 - **`train_loan_DRL.py`:** MaskablePPO with constant LR, entropy bonus and reward normalisation.

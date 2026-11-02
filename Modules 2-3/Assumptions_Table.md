@@ -62,6 +62,7 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 | D2 | telephony outage: rate, MTTR | TBD | assumed | affects `W_Call after offers`, `W_Call incomplete files` |
 | D3 | incomplete-documents surge `m`, duration | level 1: m 0.25, 72–168 h; level 2: m 0.5, 120–240 h | assumed | `p_inc × (1 + m)` capped at 0.95, base `p_inc` mined |
 | D3 | portal upload delay added to the incomplete loop | level 1: 24–96 h; level 2: 72–168 h | assumed | makes D3 harmful (without it Loss ≈ 0.006: base `p_inc` is already 0.69 on the first round) |
+| D1/D2/D3 | training cycle of fixed lengths | D1, D2: 8, 24, 72, 168 h; D3: 72, 168, 240 h | assumed | length hidden from the agent; random lengths kept as a robustness check |
 | D4 | absent share of team, absence length | TBD | assumed | added after D1–D3, D6 |
 | D5 | fraud-flag surge factor | TBD | assumed | base rate mined |
 | D6 | SLA-risk alert threshold (slack) | TBD | assumed | expiry clock is mined |
@@ -76,5 +77,6 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 | substitute | 0.30 | alternative channel; rework prob r_sub | assumed | D1: online-only send (channel mined) |
 | escalate | 0.50 | q_esc ≈ 0.95; senior pool capacity 1–3 | assumed | masked when no slot free; size vs fraud team |
 | c_p (reference penalty) | 1 (relative) | — | literature | Metzger et al. 2020: relative costs, κ swept 0.1–0.5 |
-| w (resilience vs cost weight) | TBD | — | assumed | Pareto sweep |
+| Loss_base, N (reward normalisation) | per scenario, mean of do-nothing over its cycle cells | — | calibrated | not per cell: short outages' Loss is at noise level |
+| w (resilience vs cost weight) | 1 (default) | — | assumed | Pareto sweep |
 | expiry / deadline-miss penalty | TBD × c_p | — | assumed | residual penalty |

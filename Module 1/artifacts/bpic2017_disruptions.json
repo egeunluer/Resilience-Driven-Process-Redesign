@@ -233,5 +233,85 @@
     "reassign": {
       "_doc": "missing documents: a caseworker chases the documents directly (the case skips the portal delay) and the case's incomplete-file calls go to the front of the queue (fastest free qualified worker), ahead of other cases."
     }
+  },
+  "training_cycle": {
+    "_doc": "Phase 8: training/evaluation cycle of (scenario, level, duration_h) cells. The disruption length is fixed per cell instead of drawn from the level's mixture (the agent still never observes it). Outage levels only differ in their length distribution, so level 2 is used for D1/D2; for D3 the level sets surge magnitude and upload delay, the cell sets the surge length.",
+    "cells": [
+      [
+        "D1_offer_outage",
+        "2",
+        8
+      ],
+      [
+        "D1_offer_outage",
+        "2",
+        24
+      ],
+      [
+        "D1_offer_outage",
+        "2",
+        72
+      ],
+      [
+        "D1_offer_outage",
+        "2",
+        168
+      ],
+      [
+        "D2_telephony_outage",
+        "2",
+        8
+      ],
+      [
+        "D2_telephony_outage",
+        "2",
+        24
+      ],
+      [
+        "D2_telephony_outage",
+        "2",
+        72
+      ],
+      [
+        "D2_telephony_outage",
+        "2",
+        168
+      ],
+      [
+        "D3_documents_surge",
+        "2",
+        72
+      ],
+      [
+        "D3_documents_surge",
+        "2",
+        168
+      ],
+      [
+        "D3_documents_surge",
+        "2",
+        240
+      ]
+    ]
+  },
+  "robustness_cells": {
+    "_doc": "benchmark-only cells with the length drawn from the level's distribution (between and beyond the grid)",
+    "cells": [
+      [
+        "D1_offer_outage",
+        "2",
+        null
+      ],
+      [
+        "D2_telephony_outage",
+        "2",
+        null
+      ],
+      [
+        "D3_documents_surge",
+        "2",
+        null
+      ]
+    ]
   }
 }
