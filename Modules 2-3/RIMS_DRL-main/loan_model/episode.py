@@ -39,10 +39,10 @@ class Episode:
     `duration_h` fixes the disruption length (None: drawn from the level)."""
 
     def __init__(self, sm, disruption_cfg, scenario, level, seed, cal, policy=None,
-                 duration_h=None, warmup_days=WARMUP_DAYS, horizon_days=HORIZON_DAYS):
+                 duration_h=None, warmup_days=WARMUP_DAYS, horizon_days=HORIZON_DAYS, record=False):
         self.tr = QTracker(sm.m['deadlines'], sm.m['end_stages'], q_ref=cal['q_ref'],
                            deadline_floor_s=cal['deadline_floor_s'])
-        self.sim = sim = Simulator(sm, seed=seed, observers=[self.tr], record=False)
+        self.sim = sim = Simulator(sm, seed=seed, observers=[self.tr], record=record)
         sim.decision_policy = policy
         self.seed = seed
         rng = np.random.default_rng(None if seed is None else seed + 7919)

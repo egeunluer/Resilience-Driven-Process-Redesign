@@ -1,5 +1,5 @@
 {
-  "_doc": "Log-specific disruption scenarios for loan_model/disruptions.py (Phase 5). Mechanisms are generic (outage, routing_surge); this file maps them onto BPIC2017 stages, transitions and work items. All intensities are assumed and swept (Modules 2-3/Assumptions_Table.md section 3). Durations in hours; outage lengths come from a short/long mixture the agent never sees.",
+  "_doc": "Log-specific disruption scenarios for loan_model/disruptions.py (Phase 5). Mechanisms are generic (outage, routing_surge); this file maps them onto BPIC2017 stages, transitions and work items. All intensities are assumed and swept (Modules 2-3/Assumptions_Table.md section 3). Durations in hours; every shock lasts a length drawn uniformly from 72-120 h, which the agent never sees.",
   "scenarios": {
     "D1_offer_outage": {
       "mechanism": "outage",
@@ -16,41 +16,17 @@
       "levels": {
         "1": {
           "duration_h": {
-            "mixture": [
-              {
-                "p": 0.5,
-                "uniform": [
-                  4,
-                  24
-                ]
-              },
-              {
-                "p": 0.5,
-                "uniform": [
-                  24,
-                  72
-                ]
-              }
+            "uniform": [
+              72,
+              120
             ]
           }
         },
         "2": {
           "duration_h": {
-            "mixture": [
-              {
-                "p": 0.5,
-                "uniform": [
-                  8,
-                  48
-                ]
-              },
-              {
-                "p": 0.5,
-                "uniform": [
-                  72,
-                  168
-                ]
-              }
+            "uniform": [
+              72,
+              120
             ]
           }
         }
@@ -69,41 +45,17 @@
       "levels": {
         "1": {
           "duration_h": {
-            "mixture": [
-              {
-                "p": 0.5,
-                "uniform": [
-                  4,
-                  24
-                ]
-              },
-              {
-                "p": 0.5,
-                "uniform": [
-                  24,
-                  72
-                ]
-              }
+            "uniform": [
+              72,
+              120
             ]
           }
         },
         "2": {
           "duration_h": {
-            "mixture": [
-              {
-                "p": 0.5,
-                "uniform": [
-                  8,
-                  48
-                ]
-              },
-              {
-                "p": 0.5,
-                "uniform": [
-                  72,
-                  168
-                ]
-              }
+            "uniform": [
+              72,
+              120
             ]
           }
         }
@@ -121,7 +73,7 @@
           "duration_h": {
             "uniform": [
               72,
-              168
+              120
             ]
           },
           "upload_delay_h": {
@@ -135,8 +87,8 @@
           "magnitude": 0.5,
           "duration_h": {
             "uniform": [
-              120,
-              240
+              72,
+              120
             ]
           },
           "upload_delay_h": {
@@ -146,6 +98,30 @@
             ]
           }
         }
+      }
+    },
+    "D4_demand_spike": {
+      "mechanism": "arrival_surge",
+      "failure_type": "overload",
+      "_doc": "Demand spike: applications arrive at arrival_factor x the normal hour-of-week rate (the hours that start during the spike). Nothing is blocked and at x3 the pool absorbs the work (sweep_demand_spike.py: almost no work item waits a working day); the harm comes weeks later, when the spike's cohort reaches its deadlines together and its usual share of slow customers misses them at once. So the decisions target those cases: see trigger.",
+      "levels": {
+        "2": {
+          "arrival_factor": 3.0,
+          "duration_h": {
+            "uniform": [
+              72,
+              120
+            ]
+          }
+        }
+      },
+      "trigger": {
+        "_doc": "During working hours, a case that arrived during the spike, in a customer-facing stage, still on track and within slack_h of its stage deadline, gets one decision per stage visit (failure type overload).",
+        "stages": [
+          "await_customer",
+          "incomplete"
+        ],
+        "slack_h": 48
       }
     }
   },
@@ -174,13 +150,11 @@
     "allowed": {
       "offer_dispatch_outage": [
         "do_nothing",
-        "retry",
         "substitute",
         "escalate"
       ],
       "telephony_outage": [
         "do_nothing",
-        "retry",
         "substitute",
         "escalate"
       ],
@@ -190,10 +164,17 @@
         "reassign",
         "escalate"
       ],
-      "_sla_risk": "an SLA-risk alert allows the actions of the failure that blocked the case"
+      "_sla_risk": "an SLA-risk alert allows the actions of the failure that blocked the case",
+      "_retry": "retry is not offered in an outage: a waiting case (do_nothing) resumes the moment the service is restored, so retrying could only resume it later and at a cost; it stays for missing documents (automatic re-fetch)",
+      "overload": [
+        "do_nothing",
+        "reassign",
+        "substitute",
+        "escalate"
+      ]
     },
     "retry": {
-      "_doc": "Try again after a short delay; during an outage it only succeeds once the service is back. For missing documents: an automatic re-fetch finds them with documents_success_p, so the case skips the incomplete loop. At most max_per_case retries per case (then retry is masked), so an outage cannot be retried hour after hour.",
+      "_doc": "Missing documents only (masked in outages, see allowed._retry): an automatic re-fetch after delay_working_h finds the documents with documents_success_p, so the case skips the incomplete loop. At most max_per_case retries per case (then retry is masked).",
       "delay_working_h": 1.0,
       "documents_success_p": 0.4,
       "max_per_case": 2
@@ -217,85 +198,46 @@
             72
           ]
         }
+      },
+      "overload": {
+        "_doc": "automated written reminder (e-mail / text) to the customer: the remaining customer waits of the case's current stage visit shrink by wait_factor; no worker needed",
+        "wait_factor": {
+          "uniform": [
+            0.7,
+            0.9
+          ]
+        }
       }
     },
     "escalate": {
-      "_doc": "a senior team handles the step manually (offer dispatch, call, or completing the file). Scarce: capacity slots shared by all cases, masked when none is free. Capacity sized against the real fraud team (W_Assess potential fraud: 34 qualified workers, ~1% of cases).",
-      "capacity": 2,
+      "_doc": "a backup worker does the blocked step by hand (offer sent manually, call from another line, file completed directly). The backup workers are real workers of the log: per work item, the team_per_item workers with the most sessions for it outside the constrained pool (the next ranks after the pool's); their qualification and attendance (active_day_share) are mined and they only take escalations. Escalate is masked while no backup worker for the step is on shift and free. Handling time and success probability are assumed: a manual workaround is slower than the logged system-supported session (0.3-2.7 min median). Demand spike (overload): a backup call-centre worker calls the customer personally; on success the remaining customer waits of the case's current stage visit shrink by chase_wait_factor.",
+      "work_items": {
+        "offer_dispatch_outage": "W_Complete application",
+        "telephony_outage": "W_Call after offers",
+        "documents_missing": "W_Call incomplete files",
+        "overload": "W_Call after offers"
+      },
+      "team_per_item": 2,
       "handling_working_h": {
         "uniform": [
           0.5,
           2.0
         ]
       },
-      "success_p": 0.95
+      "success_p": 0.95,
+      "chase_wait_factor": {
+        "uniform": [
+          0.3,
+          0.6
+        ]
+      }
     },
     "reassign": {
-      "_doc": "missing documents: a caseworker chases the documents directly (the case skips the portal delay) and the case's incomplete-file calls go to the front of the queue (fastest free qualified worker), ahead of other cases."
+      "_doc": "missing documents: a caseworker chases the documents directly (the case skips the portal delay) and the case's incomplete-file calls go to the front of the queue (fastest free qualified worker), ahead of other cases. Demand spike (overload): the case's remaining calls in its current stage go to the front of the queue."
     }
   },
   "training_cycle": {
-    "_doc": "Phase 8: training/evaluation cycle of (scenario, level, duration_h) cells. The disruption length is fixed per cell instead of drawn from the level's mixture (the agent still never observes it). Outage levels only differ in their length distribution, so level 2 is used for D1/D2; for D3 the level sets surge magnitude and upload delay, the cell sets the surge length.",
-    "cells": [
-      [
-        "D1_offer_outage",
-        "2",
-        8
-      ],
-      [
-        "D1_offer_outage",
-        "2",
-        24
-      ],
-      [
-        "D1_offer_outage",
-        "2",
-        72
-      ],
-      [
-        "D1_offer_outage",
-        "2",
-        168
-      ],
-      [
-        "D2_telephony_outage",
-        "2",
-        8
-      ],
-      [
-        "D2_telephony_outage",
-        "2",
-        24
-      ],
-      [
-        "D2_telephony_outage",
-        "2",
-        72
-      ],
-      [
-        "D2_telephony_outage",
-        "2",
-        168
-      ],
-      [
-        "D3_documents_surge",
-        "2",
-        72
-      ],
-      [
-        "D3_documents_surge",
-        "2",
-        168
-      ],
-      [
-        "D3_documents_surge",
-        "2",
-        240
-      ]
-    ]
-  },
-  "robustness_cells": {
-    "_doc": "benchmark-only cells with the length drawn from the level's distribution (between and beyond the grid)",
+    "_doc": "One cell per scenario, the length drawn per episode (72-120 h for every shock type). Short outages were removed: up to ~72 h they did about as much harm as normal day-to-day noise.",
     "cells": [
       [
         "D1_offer_outage",
@@ -309,6 +251,11 @@
       ],
       [
         "D3_documents_surge",
+        "2",
+        null
+      ],
+      [
+        "D4_demand_spike",
         "2",
         null
       ]

@@ -7,12 +7,15 @@ Generic mechanisms, mapped onto a log by `<log>_disruptions.json`:
                  cannot happen; the case fails and the agent decides.
   routing_surge  for a while, a stage exit (e.g. validation -> incomplete) is more
                  likely; every case routed there during the surge is a decision.
+  arrival_surge  demand spike: for a while, applications arrive at `arrival_factor`
+                 times the normal (hour-of-week) rate; nothing is blocked, the extra
+                 work queues up.
 Plus the SLA-risk alert (D6): a blocked case left waiting gets a second decision
 when its slack (stage deadline - case age) falls to a threshold.
 
 One scenario per episode (`scenario`, `level`), fired at `start(onset)`. The
-outage length is drawn here from the level's distribution, or fixed by `duration_h`
-(the training cycle of Phase 8); either way it is never exposed to the agent.
+length is drawn here from the level's distribution, or fixed by `duration_h`; either
+way it is never exposed to the agent.
 """
 import json
 
@@ -89,6 +92,12 @@ class DisruptionLayer:
         self.restored.succeed()
 
     # ---------------------------------------------------------------- hooks
+    def arrival_factor(self):
+        """Multiplier of the arrival rate (demand spike), 1 otherwise."""
+        if self.active and self.mechanism == 'arrival_surge':
+            return float(self.params['arrival_factor'])
+        return 1.0
+
     def blocks_session(self, item):
         if self.active and self.mechanism == 'outage' and item in self.blocked_items:
             return self.failure_type

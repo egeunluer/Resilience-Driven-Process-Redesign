@@ -17,6 +17,23 @@ do-nothing episode sums to -w on average, and acting on every case costs about k
 Not per cell: short outages do almost no harm, and their own Loss_base is at the level
 of normal day-to-day noise, which a per-cell normalisation would blow up.
 
+Per-case reward (reward='case'): the decisions of one case form their own chain, and
+each decision is charged its case's share of the Loss (metrics.QTracker.case_loss)
+from this decision to the case's next decision (or the horizon), so the credit no
+longer has to travel through hundreds of other cases' decisions:
+    r_i = -N[e] * ( w * [(1-beta) dL_case,i + beta dLoss_i] / Loss_base[e]  +  kappa[a] c_p )
+          = -( w N[e] [(1-beta) dL_case,i + beta dLoss_i] / Loss_base[e]  +  kappa[a] )
+The beta part (process-wide Loss between this decision and the next, as in 'global')
+would keep the effect on other cases (reassign jumps the queue, escalation uses a backup
+worker another case may need). Default beta = 0: after the last decision of an episode
+that part is all the Loss still to come (weeks of it), which landed on one random case
+and made training collapse (run loan_ppo_w1_s0_case_b0.2). The case share is only known later: step() returns the
+immediate part (cost + beta part), and at the episode end info['case_trace'] carries,
+per step, the case id and the delayed part; loan_ppo.CaseMaskablePPO assembles the
+chains. The factor N[e] puts rewards in per-decision units (an action costs kappa);
+it is a positive constant per scenario, so it does not change the best policy.
+The episode objective (evaluation, benchmark) is the same in both modes.
+
 Scenario selection per reset: a fixed `cycle` of (scenario, level, duration_h) cells
 (duration_h None: drawn from the level), stepped through in order like the shock
 cycle of gym_env; `shock_cycle_index` is reset by EvalPolicyCallback so evaluation
@@ -39,7 +56,7 @@ class LoanEnv(Env):
     metadata = {'render_modes': []}
 
     def __init__(self, stage_model, disruptions, calibration, cycle, w=1.0, norm=None,
-                 warmup_days=WARMUP_DAYS, horizon_days=HORIZON_DAYS):
+                 reward='global', beta=0.0, warmup_days=WARMUP_DAYS, horizon_days=HORIZON_DAYS):
         """stage_model / disruptions / calibration: paths or dicts. The calibration's
         "pool" (constrained worker pool) is applied to the stage model. `norm` maps
         cycle_key(scenario, level) to {'loss_base': seconds, 'n_decisions': N}; default:
@@ -52,6 +69,9 @@ class LoanEnv(Env):
         self.sm = StageModel(base, pool=self.cal.get('pool'))
         self.cycle = [tuple(c) for c in cycle]
         self.w = w
+        if reward not in ('global', 'case'):
+            raise ValueError(f'reward must be global or case, not {reward!r}')
+        self.reward, self.beta = reward, beta
         self.norm = norm if norm is not None else self.cal.get('loss_base_by_scenario', {})
         missing = [self._key(c) for c in self.cycle if self._key(c) not in self.norm]
         if missing:
@@ -67,7 +87,7 @@ class LoanEnv(Env):
         self.stages = [s for s in self.sm.m['stages'] if s not in self.sm.end_stages]
         self.scenarios = list(self.cfg['scenarios'])
         self.deadline = self.cal['deadlines_s']
-        self.esc_capacity = rc['escalate']['capacity']
+        self.normal_daily_arrivals = sum(self.sm.m['arrivals']['rates_per_hour_of_week']) / 7
         self.action_space = spaces.Discrete(len(self.actions))
         self.obs_names = self._obs_names()
         self.observation_space = spaces.Box(-1.0, 1.0, shape=(len(self.obs_names),), dtype=np.float32)
@@ -102,6 +122,8 @@ class LoanEnv(Env):
         self._loss_mark = 0.0
         self.cost = 0.0
         self.steps = 0
+        self.scale = n['n_decisions'] if self.reward == 'case' else 1.0
+        self._trace = []          # per step: (case id, its Loss share at the decision)
         return self._obs(), {}
 
     def _decision(self):
@@ -115,10 +137,12 @@ class LoanEnv(Env):
         ep = self.ep
         d = ep.sim.pending.popleft()
         name = self.actions[int(action)]
+        if self.reward == 'case':
+            self._trace.append((d.cid, ep.tr.case_loss(d.cid)))
         if name not in ep.sim.allowed_actions(d):
             raise ValueError(f'action {name!r} is masked for {d}')
         d.event.succeed(name)
-        # let the case act on it now, so e.g. an escalation holds its slot before the
+        # let the case act on it now, so e.g. an escalation holds its worker before the
         # mask of a decision pending at the same instant is computed
         ep.sim.env.run(until=d.event)
         self.steps += 1
@@ -126,7 +150,8 @@ class LoanEnv(Env):
         pending = ep.run_to_decision()
         d_loss = ep.tr.loss - self._loss_mark
         self._loss_mark = ep.tr.loss
-        r = -(self.w * d_loss / self.loss_base + self.kappa[name] * self.c_p)
+        wg = self.beta if self.reward == 'case' else 1.0
+        r = -self.scale * (self.w * wg * d_loss / self.loss_base + self.kappa[name] * self.c_p)
         info = {}
         if not pending:
             res = ep.result()
@@ -141,10 +166,25 @@ class LoanEnv(Env):
                 **{f'n_{a}': res['actions'].get(a, 0) for a in self.actions},
             }
             info['resilience'] = {'shock': res['scenario'], **self.last_episode_info}
+            if self.reward == 'case':
+                info['case_trace'] = self._case_trace()
             obs = np.zeros(self.observation_space.shape, dtype=np.float32)
         else:
             obs = self._obs()
         return obs, float(r), not pending, False, info
+
+    def _case_trace(self):
+        """Case id and delayed reward (the case's Loss share up to its next decision or
+        the horizon) per step of the finished episode."""
+        tr, k = self.ep.tr, self.scale * self.w * (1 - self.beta) / self.loss_base
+        nxt = {}
+        delayed = [0.0] * len(self._trace)
+        for i in range(len(self._trace) - 1, -1, -1):
+            cid, at = self._trace[i]
+            later = nxt[cid] if cid in nxt else tr.case_loss(cid)
+            delayed[i] = -k * (later - at)
+            nxt[cid] = at
+        return {'cid': [c for c, _ in self._trace], 'delayed': delayed}
 
     @property
     def mean_cycle_time(self):
@@ -155,18 +195,19 @@ class LoanEnv(Env):
     def _obs_names(self):
         return (['disruption_active', 'since_onset', 'since_end', 'working_hours', 'hour_of_day',
                  'esc_free', 'pending', 'blocked', 'blocked_slack_lt2d', 'blocked_slack_2_7d',
-                 'q_over_ref', 'rolling_q_over_ref', 'open_cases']
+                 'q_over_ref', 'rolling_q_over_ref', 'open_cases', 'arrivals_24h', 'queued']
                 + [f'scenario_{s}' for s in self.scenarios]
                 + [f'cause_{c}' for c in self.causes] + ['alert']
                 + [f'stage_{s}' for s in self.stages]
-                + ['slack', 'age', 'expiry_left', 'attempts', 'retries_left', 'visit', 'offers', 'fraud'])
+                + ['slack', 'age', 'expiry_left', 'attempts', 'retries_left', 'visit', 'offers', 'fraud',
+                   'spike_cohort'])
 
     def _obs(self):
         ep, sim, tr = self.ep, self.ep.sim, self.ep.tr
         d = self._decision()
         now, dis = ep.now, ep.d
         c = sim.cases[d.cid]
-        # slack of the cases currently blocked by the disruption (who competes for the slots)
+        # slack of the cases currently blocked by the disruption (who competes for the backup workers)
         slacks = []
         for cid in tr.hits:
             cs = tr.case.get(cid)
@@ -181,7 +222,7 @@ class LoanEnv(Env):
             min(1.0, max(0.0, now - dis.end) / (7 * DAY)) if not dis.active else 0.0,
             float(bool(sim.on_shift)),
             (local.hour + local.minute / 60) / 24,
-            (self.esc_capacity - sim.esc.count - len(sim.esc.queue)) / self.esc_capacity,
+            len(sim.escalation_free(d.cause)) / max(1, sim.escalation_size(d.cause)),
             min(1.0, len(sim.pending) / 100),
             min(1.0, len(tr.hits) / 500),
             float((slacks < 2 * DAY).sum()) / n_blk if len(slacks) else 0.0,
@@ -189,6 +230,9 @@ class LoanEnv(Env):
             min(1.0, tr.q / tr.q_ref) * 2 - 1,
             min(1.0, tr.rolling_q(now) / tr.q_ref) * 2 - 1,
             min(1.0, tr.open / 4000),
+            # demand: arrivals of the last 24 h against 3x a normal day; work waiting for a worker
+            min(1.0, sum(n for _, n in sim.arrival_log) / (3 * self.normal_daily_arrivals)),
+            min(1.0, sum(len(q) for q in sim.queues.values()) / 200),
         ]
         g += [float(dis.name == s) for s in self.scenarios]
         g += [float(d.cause == x) for x in self.causes] + [float(d.failure_type == self.alert_type)]
@@ -205,5 +249,6 @@ class LoanEnv(Env):
             min(1.0, sum(1 for s, _ in c['stages'] if s == d.stage) / 3),
             min(1.0, c['offers'] / 3),
             float('fraud' in c['flags']),
+            float(d.cid in sim.cohort),
         ]
         return np.clip(np.array(g, dtype=np.float32), -1.0, 1.0)

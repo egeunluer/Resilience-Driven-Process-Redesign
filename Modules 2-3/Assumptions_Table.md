@@ -50,7 +50,7 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 | Loss | ∫ max(0, Q_ref − Q(t)) / Q_ref dt | literature | recovery triangle (corpus P43, P35); ~12 s/day without disruption |
 | Hard penalty | expiries caused by delay (timer wins the race) | imposed | baseline 1.4/day; customers who never respond are not penalised |
 | Loss_base[e] | do-nothing Loss per scenario | imposed | normalisation, like CPL_base |
-| Recovery | disruption over, all blocked steps done, 24 h rolling Q ≥ Q_ref | imposed | 3-day full work stop: recovery after 4.2 d |
+| Recovery | disruption over, all blocked steps done, 24 h rolling Q ≥ Q_ref | imposed | 3-day full work stop: recovery after 4.2 d. Misleading for D4: declared when the spike ends, weeks before its harm arrives |
 | Episode horizon | fixed 50 days after onset | imposed | late harm arrives by day ~40 (D2); recovery time reported separately |
 | Customer patience β | not implemented (deferred option) | assumed | P(cancel) = 1 − exp(−β · disruption delay); β = 0 is the current model |
 
@@ -58,12 +58,18 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 
 | ID | Parameter | Range | Source | Note |
 |---|---|---|---|---|
-| D1 | offer dispatch outage: rate, MTTR | TBD | assumed | uncertain repair time |
-| D2 | telephony outage: rate, MTTR | TBD | assumed | affects `W_Call after offers`, `W_Call incomplete files` |
-| D3 | incomplete-documents surge `m`, duration | level 1: m 0.25, 72–168 h; level 2: m 0.5, 120–240 h | assumed | `p_inc × (1 + m)` capped at 0.95, base `p_inc` mined |
+| all | shock length | uniform 72–120 h for every shock type, drawn per episode | assumed | hidden from the agent; outages up to ~72 h did about as much harm as normal noise, so short shocks were removed |
+| D1 | offer dispatch outage | blocks `complete → await_customer` | assumed | one outage per episode |
+| D2 | telephony outage | blocks `W_Call after offers`, `W_Call incomplete files` | assumed | one outage per episode |
+| D3 | incomplete-documents surge `m` | level 2: m 0.5 (level 1: 0.25) | assumed | `p_inc × (1 + m)` capped at 0.95, base `p_inc` mined |
 | D3 | portal upload delay added to the incomplete loop | level 1: 24–96 h; level 2: 72–168 h | assumed | makes D3 harmful (without it Loss ≈ 0.006: base `p_inc` is already 0.69 on the first round) |
-| D1/D2/D3 | training cycle of fixed lengths | D1, D2: 8, 24, 72, 168 h; D3: 72, 168, 240 h | assumed | length hidden from the agent; random lengths kept as a robustness check |
-| D4 | absent share of team, absence length | TBD | assumed | added after D1–D3, D6 |
+| training cycle | one cell per scenario, D1–D4, length drawn | — | assumed | replaced the fixed-length cycle (8–240 h) |
+| D4 | demand spike: arrival rate × 3 (hours that start during the spike) | 3 | assumed | do-nothing sweep (`sweep_demand_spike.py`): the pool absorbs ×3 (almost no work item waits a working day); Loss 0.14 Q-days, arriving at days ~30–45 when the spike's cohort reaches its deadlines together; queues only blow up around ×8 |
+| D4 | decision trigger | spike-cohort case in `await_customer` / `incomplete`, on track, slack ≤ 48 h, once per stage visit, working hours | assumed | targets where the spike's harm is; ~250 decisions per episode |
+| D4 | reminder effect (substitute) | remaining customer waits of the stage visit × U[0.7, 0.9] | assumed | automated written reminder, no worker |
+| D4 | personal call effect (escalate) | remaining customer waits × U[0.3, 0.6], success 0.95, backup workers of `W_Call after offers` | assumed | reminder calls exist in the log (`W_Call after offers`); their effect size is not identifiable from it |
+| D4 | reassign | the case's remaining calls in the stage go to the front of the queue | assumed | small effect at ×3 (short queues) |
+| — | staff absence (former D4) | TBD | assumed | later |
 | D5 | fraud-flag surge factor | TBD | assumed | base rate mined |
 | D6 | SLA-risk alert threshold (slack) | TBD | assumed | expiry clock is mined |
 
@@ -72,10 +78,11 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 | Action | Cost κ (× c_p) | Success / effect | Source | Note |
 |---|---|---|---|---|
 | do-nothing | 0 | waits for natural resolution | — | |
-| retry | 0.05 | succeeds only once the outage is over; documents re-fetch 0.4; at most 2 per case | assumed | ordering: literature (Russell 2006, Lerner 2010, P20); cap keeps episodes short |
+| retry | 0.05 | missing documents only: automatic re-fetch after 1 working h, finds them with p 0.4; at most 2 per case. Not offered in D1/D2 outages | assumed | ordering: literature (Russell 2006, Lerner 2010, P20). Masked in outages because a waiting case resumes the moment the service is restored, so retrying can only resume it later and at a cost |
 | reassign | 0.15 | D3: skips the portal delay, calls to the front of the queue | assumed | delays other cases (coupling) |
 | substitute | 0.30 | alternative channel; rework prob r_sub | assumed | D1: online-only send (channel mined) |
-| escalate | 0.50 | q_esc ≈ 0.95; senior pool capacity 1–3 | assumed | masked when no slot free; size vs fraud team |
+| escalate | 0.50 | q_esc ≈ 0.95; handling 0.5–2 working h | assumed | manual workaround, slower than the logged session (0.3–2.7 min median) |
+| escalation backup team | 2 workers per escalated work item, ranked just outside the top-k pool | `W_Complete application`: User_10, User_61; `W_Call after offers`: User_24, User_28; `W_Call incomplete files`: User_29, User_28 | mined (who, qualification, attendance); assumed (that this role exists, size 2) | escalations only; masked when none on shift and free; size swept in sensitivity |
 | c_p (reference penalty) | 1 (relative) | — | literature | Metzger et al. 2020: relative costs, κ swept 0.1–0.5 |
 | Loss_base, N (reward normalisation) | per scenario, mean of do-nothing over its cycle cells | — | calibrated | not per cell: short outages' Loss is at noise level |
 | w (resilience vs cost weight) | 1 (default) | — | assumed | Pareto sweep |

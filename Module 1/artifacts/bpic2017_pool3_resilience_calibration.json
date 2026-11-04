@@ -55,131 +55,60 @@
  "baseline_loss_s_per_day": 20.287535448035563,
  "baseline_delay_expiries_per_day": 1.471875,
  "loss_base_by_scenario": {
-  "D1_offer_outage:2:8h": {
-   "loss_base": 436.10343993652066,
-   "loss_sd": 804.0662329665697,
-   "n_decisions": 47.5,
-   "n_seeds": 16,
-   "time_to_recover_d": 0.375
-  },
-  "D1_offer_outage:2:24h": {
-   "loss_base": 389.9759633827126,
-   "loss_sd": 860.2766377747791,
-   "n_decisions": 132.5625,
-   "n_seeds": 16,
-   "time_to_recover_d": 1.0416666666666667
-  },
-  "D1_offer_outage:2:72h": {
-   "loss_base": 691.7965572725037,
-   "loss_sd": 990.2775000911716,
-   "n_decisions": 478.125,
-   "n_seeds": 16,
-   "time_to_recover_d": 3.0416666666666665
-  },
-  "D1_offer_outage:2:168h": {
-   "loss_base": 42953.6317785196,
-   "loss_sd": 7131.602971527527,
-   "n_decisions": 1146.8125,
-   "n_seeds": 16,
-   "time_to_recover_d": 7.872395833333333
-  },
-  "D2_telephony_outage:2:8h": {
-   "loss_base": 569.2412092155494,
-   "loss_sd": 948.0687057243198,
-   "n_decisions": 107.375,
-   "n_seeds": 16,
-   "time_to_recover_d": 0.3723958333333333
-  },
-  "D2_telephony_outage:2:24h": {
-   "loss_base": 799.8035323091669,
-   "loss_sd": 1328.300372211913,
-   "n_decisions": 268.125,
-   "n_seeds": 16,
-   "time_to_recover_d": 1.0390625
-  },
-  "D2_telephony_outage:2:72h": {
-   "loss_base": 1257.726903280509,
-   "loss_sd": 1346.0344015725889,
-   "n_decisions": 716.125,
-   "n_seeds": 16,
-   "time_to_recover_d": 3.0416666666666665
-  },
-  "D2_telephony_outage:2:168h": {
-   "loss_base": 15396.070692009584,
-   "loss_sd": 4975.978678385737,
-   "n_decisions": 1268.1875,
-   "n_seeds": 16,
-   "time_to_recover_d": 7.041666666666667
-  },
-  "D3_documents_surge:2:72h": {
-   "loss_base": 1379.911874231656,
-   "loss_sd": 3501.789590243517,
-   "n_decisions": 220.0,
-   "n_seeds": 16,
-   "time_to_recover_d": 3.0
-  },
-  "D3_documents_surge:2:168h": {
-   "loss_base": 2282.0878708779524,
-   "loss_sd": 3511.1625580460177,
-   "n_decisions": 476.25,
-   "n_seeds": 16,
-   "time_to_recover_d": 7.0
-  },
-  "D3_documents_surge:2:240h": {
-   "loss_base": 5464.320941901637,
-   "loss_sd": 3971.1397063682602,
-   "n_decisions": 726.6875,
-   "n_seeds": 16,
-   "time_to_recover_d": 10.0
-  },
   "D1_offer_outage:2": {
-   "loss_base": 8517.714047896457,
-   "loss_sd": 11884.515535519708,
-   "n_decisions": 474.4375,
+   "loss_base": 4831.466603406262,
+   "loss_sd": 4535.202083394524,
+   "n_decisions": 649.3125,
    "n_seeds": 16,
-   "time_to_recover_d": 3.341145833333333
+   "time_to_recover_d": 4.6015625
   },
   "D2_telephony_outage:2": {
-   "loss_base": 2349.8180382260566,
-   "loss_sd": 2491.901363938508,
-   "n_decisions": 622.4375,
+   "loss_base": 2562.261108260913,
+   "loss_sd": 3047.030387136142,
+   "n_decisions": 872.125,
    "n_seeds": 16,
-   "time_to_recover_d": 3.0026041666666665
+   "time_to_recover_d": 4.138020833333333
   },
   "D3_documents_surge:2": {
-   "loss_base": 3282.413931770733,
-   "loss_sd": 3867.714600084431,
-   "n_decisions": 555.625,
+   "loss_base": 1353.9756328446244,
+   "loss_sd": 1221.2789905211662,
+   "n_decisions": 275.6875,
    "n_seeds": 16,
-   "time_to_recover_d": 7.830729166666666
+   "time_to_recover_d": 4.138020833333333
+  },
+  "D4_demand_spike:2": {
+   "loss_base": 12850.971936112677,
+   "loss_sd": 7212.006003067639,
+   "n_decisions": 250.0,
+   "n_seeds": 16,
+   "time_to_recover_d": 4.138020833333333
   },
   "D1_offer_outage:2:cycle": {
-   "loss_base": 11117.876934777834,
-   "n_decisions": 451.25,
+   "loss_base": 4831.466603406262,
+   "n_decisions": 649.3125,
    "cells": [
-    "D1_offer_outage:2:8h",
-    "D1_offer_outage:2:24h",
-    "D1_offer_outage:2:72h",
-    "D1_offer_outage:2:168h"
+    "D1_offer_outage:2"
    ]
   },
   "D2_telephony_outage:2:cycle": {
-   "loss_base": 4505.710584203702,
-   "n_decisions": 589.953125,
+   "loss_base": 2562.261108260913,
+   "n_decisions": 872.125,
    "cells": [
-    "D2_telephony_outage:2:8h",
-    "D2_telephony_outage:2:24h",
-    "D2_telephony_outage:2:72h",
-    "D2_telephony_outage:2:168h"
+    "D2_telephony_outage:2"
    ]
   },
   "D3_documents_surge:2:cycle": {
-   "loss_base": 3042.106895670415,
-   "n_decisions": 474.3125,
+   "loss_base": 1353.9756328446244,
+   "n_decisions": 275.6875,
    "cells": [
-    "D3_documents_surge:2:72h",
-    "D3_documents_surge:2:168h",
-    "D3_documents_surge:2:240h"
+    "D3_documents_surge:2"
+   ]
+  },
+  "D4_demand_spike:2:cycle": {
+   "loss_base": 12850.971936112677,
+   "n_decisions": 250.0,
+   "cells": [
+    "D4_demand_spike:2"
    ]
   }
  },

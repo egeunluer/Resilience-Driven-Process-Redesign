@@ -7,10 +7,11 @@ Policies (doc section 14), all `policy(sim, decision) -> action`:
   always_<action>     retry / reassign / substitute / escalate whenever allowed, else do_nothing
   greedy              myopic: per case, the cheapest action whose expected delay keeps the
                       case within its current stage deadline (else the fastest one);
-                      ignores the scarce slots and the effect on other cases
-  rule                hand-written, SmartPM / P20 style: retry once; if the outage goes on
-                      and the deadline is near, escalate (or substitute when no slot is
-                      free); missing documents: re-fetch, chase when urgent
+                      ignores the scarce backup workers and the effect on other cases
+  rule                hand-written, SmartPM / P20 style: in an outage, wait unless the
+                      deadline is near, then escalate (or substitute when no backup worker
+                      is free); the SLA alert asks again when slack runs out; missing
+                      documents: re-fetch, chase when urgent
 (The Metzger-style binary trigger -- a learned escalate-or-not -- is trained in Phase 9.)
 
 Benchmark: every policy on the same episodes (cell x seed, seeds 200+), the training
@@ -20,6 +21,7 @@ episode return; Loss_base and N of the scenario, pooled over its cycle cells), w
 
   python3 baselines_loan.py                 # 8 seeds per cell
   python3 baselines_loan.py --seeds 16 --out bench.json
+  python3 baselines_loan.py --agent ppo=tmp_loan_training/<run>/best_model.zip   # + trained agents
 """
 import argparse
 import json
@@ -76,6 +78,7 @@ class Greedy(Policy):
                                            for _ in range(20000)]) * H
         sd = self.sm.m['validation_targets']['stage_visit_duration']
         self.loop_s = float(sd['incomplete'][50] + sd['validation'][50])
+        self.visit_s = {s: float(q[50]) for s, q in sd.items()}
 
     def remaining(self, sim):
         d = sim.disruption
@@ -101,6 +104,14 @@ class Greedy(Policy):
             est = {'do_nothing': rem, 'retry': max(rc['retry']['delay_working_h'] * H, rem), 'escalate': esc,
                    'substitute': (mean(sub['extra_delay_h']) * H if 'extra_delay_h' in sub else 0.0)
                    + sub.get('rework_p', 0.0) * (mean(sub['rework_delay_h']) * H if 'rework_delay_h' in sub else 0.0)}
+        if d.cause == 'overload':
+            # demand spike: the customer's remaining wait, estimated by the stage's median
+            # visit, shortened by a reminder or a call
+            wait = self.visit_s.get(d.stage, 0.0)
+            f = lambda spec: float(np.mean(spec['uniform']))
+            est = {'do_nothing': wait, 'reassign': wait,
+                   'substitute': wait * f(rc['substitute']['overload']['wait_factor']),
+                   'escalate': esc + wait * f(rc['escalate']['chase_wait_factor'])}
         slack = self.slack(sim, d)
         k = rc['kappa']
         return min((a for a in acts if a in est),
@@ -118,8 +129,7 @@ class Rule(Policy):
             return self.pick(sim, d, ['escalate', 'reassign'] if urgent else ['retry'])
         if d.failure_type != d.cause:            # SLA-risk alert: deadline close
             return self.pick(sim, d, ['escalate', 'substitute'])
-        if d.attempts == 1:
-            return self.pick(sim, d, ['retry'])
+        # outage (retry is not offered: waiting resumes the case at the restore)
         return self.pick(sim, d, ['escalate', 'substitute'] if urgent else ['do_nothing'])
 
 
@@ -147,15 +157,42 @@ def objective(r, norm, w=1.0):
 _G = {}
 
 
-def _init(model_path, cfg_path, cal_path):
+def _init(model_path, cfg_path, cal_path, agents=None):
     cal = json.load(open(cal_path))
-    _G.update(cfg=json.load(open(cfg_path)), cal=cal,
-              sm=StageModel(json.load(open(model_path)), pool=cal['pool']))
+    _G.update(cfg=json.load(open(cfg_path)), cal=cal, paths=(model_path, cfg_path, cal_path),
+              sm=StageModel(json.load(open(model_path)), pool=cal['pool']), agents=agents or {}, loaded={})
+
+
+def _agent_episode(name, cell, seed):
+    """A trained MaskablePPO agent (deterministic) on the same episode, through LoanEnv."""
+    import torch
+    from sb3_contrib import MaskablePPO
+    from loan_env import LoanEnv
+    g = _G
+    torch.set_num_threads(1)
+    if 'env' not in g:
+        g['env'] = LoanEnv(*g['paths'], cycle=[cell])
+    if name not in g['loaded']:
+        g['loaded'][name] = MaskablePPO.load(g['agents'][name], device='cpu')
+    env, model = g['env'], g['loaded'][name]
+    env.cycle, env.shock_cycle_index = [tuple(cell)], 0
+    obs, _ = env.reset(seed=seed)
+    done = False
+    while not done:
+        a, _ = model.predict(obs, action_masks=env.action_masks(), deterministic=True)
+        obs, _, done, _, _ = env.step(int(a))
+    r = env.ep.result()
+    r['seed'] = seed            # an empty episode is redrawn under another seed
+    return r
 
 
 def _job(args):
     pol, cell, seed = args
     g = _G
+    if pol in g['agents']:
+        r = _agent_episode(pol, cell, seed)
+        r['policy'] = pol
+        return r
     r = run_episode(g['sm'], g['cfg'], cell[0], cell[1], seed, g['cal'],
                     policy=make_policy(pol, g['cfg'], g['cal'], g['sm']), duration_h=cell[2])
     r['policy'] = pol
@@ -196,22 +233,27 @@ def main():
     ap.add_argument('--seeds', type=int, default=8, help='seeds per cell, from --seed0')
     ap.add_argument('--seed0', type=int, default=200)
     ap.add_argument('--policies', nargs='+', default=POLICIES)
+    ap.add_argument('--agent', action='append', default=[], metavar='NAME=PATH',
+                    help='trained MaskablePPO model to benchmark alongside (repeatable)')
     ap.add_argument('--out')
     args = ap.parse_args()
+    agents = dict(a.split('=', 1) for a in args.agent)
+    policies = args.policies + list(agents)
     cfg = json.load(open(args.disruptions))
     norm = json.load(open(args.calibration))['loss_base_by_scenario']
     cycle = [tuple(c) for c in cfg['training_cycle']['cells']]
     robust = [tuple(c) for c in cfg.get('robustness_cells', {}).get('cells', [])]
     seeds = range(args.seed0, args.seed0 + args.seeds)
-    jobs = [(p, c, s) for c in cycle + robust for s in seeds for p in args.policies]
+    jobs = [(p, c, s) for c in cycle + robust for s in seeds for p in policies]
+    jobs.sort(key=lambda j: j[0] not in agents)      # the slow agent episodes first
     with Pool(max(1, (os.cpu_count() or 2) - 1), initializer=_init,
-              initargs=(args.model, args.disruptions, args.calibration)) as pool:
+              initargs=(args.model, args.disruptions, args.calibration, agents)) as pool:
         R = pool.map(_job, jobs, chunksize=1)
     if args.out:
         json.dump(R, open(args.out, 'w'))
-    report(R, norm, args.policies, cycle, 'training cycle (fixed lengths)')
+    report(R, norm, policies, cycle, 'training cycle')
     if robust:
-        report(R, norm, args.policies, robust, 'robustness (length drawn from the level)')
+        report(R, norm, policies, robust, 'robustness (length drawn from the level)')
 
 
 if __name__ == '__main__':

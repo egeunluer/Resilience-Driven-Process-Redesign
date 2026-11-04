@@ -29,9 +29,10 @@ Recovery actions (Phase 6, parameters in the disruption config's "recovery" bloc
               delay) and the case's calls go to the front of the queue
   substitute  alternative channel (online-only offer / written contact); side
               effects: later rework or a slower customer response
-  escalate    a scarce senior team (shared slots) handles the step manually
-`allowed_actions(decision)` gives the mask (escalate only while a slot is free, retry
-only while the case has retries left).
+  escalate    a backup worker handles the step manually (see escalation_team)
+`allowed_actions(decision)` gives the mask (escalate only while a backup worker
+qualified for the step is on shift and free, retry only while the case has retries
+left).
 """
 import json
 import math
@@ -86,6 +87,24 @@ def top_k_pool(model_dict, k):
     return sorted(pool)
 
 
+def escalation_team(model_dict, pool, work_items, per_item):
+    """Backup workers for escalations: for every work item an escalation does by hand,
+    the per_item workers with the most sessions for it in the log among those outside
+    the constrained pool (the next ranks after the pool's). They are real workers of the
+    log -- qualification and attendance are mined -- who only take escalations.
+    Returns {work item: [workers]}."""
+    if pool is None:
+        raise ValueError('the escalation team is drawn from outside a constrained pool')
+    pool = set(pool)
+    team = {}
+    for item in dict.fromkeys(work_items):
+        ranked = sorted((w for w, spec in model_dict['workers'].items()
+                         if item in spec['sessions'] and w not in pool),
+                        key=lambda w: (-model_dict['workers'][w]['sessions'][item]['n'], w))
+        team[item] = ranked[:per_item]
+    return team
+
+
 def sample_quantiles(q, rng):
     """Inverse-CDF sample from an array of equally spaced quantiles (0..100 %)."""
     x = rng.random() * (len(q) - 1)
@@ -119,6 +138,9 @@ class Simulator:
     def __init__(self, model, seed=None, start=datetime(2016, 3, 7), record=True, observers=()):
         self.sm = model if isinstance(model, StageModel) else StageModel(model)
         self.rng = np.random.default_rng(seed)
+        # separate stream for the escalation team's attendance, so attaching a
+        # disruption leaves the rest of the simulation's random draws unchanged
+        self.esc_rng = np.random.default_rng(None if seed is None else seed + 104729)
         self.start = start
         self.env = simpy.Environment()
         self.record = record
@@ -148,12 +170,16 @@ class Simulator:
         # disruption / decisions (Phase 5)
         self.disruption = None
         self.recovery = None
-        self.esc = None
+        self.esc_team = {}                          # work item -> backup workers (escalation)
+        self.esc_on_shift = set()
+        self.esc_busy = set()
         self.action_cost = 0.0
         self.decision_policy = None
         self.pending = deque()                      # Decisions waiting for the controller
         self.decision_ready = None                  # event the controller waits on (succeeded on a new Decision)
         self.decisions = []                         # (t, case, failure_type, stage, attempts, action)
+        self.cohort = set()                         # demand spike: cases that arrived during it
+        self.arrival_log = deque(maxlen=24)         # (hour start, arrivals) of the last 24 hours
         self.env.process(self._calendar())
         self.env.process(self._arrivals())
 
@@ -164,15 +190,47 @@ class Simulator:
     def _seconds_until(self, dt):
         return (dt - self.local(self.env.now)).total_seconds()
 
-    def _wait(self, tr, field):
-        """Timeout for a mined wait: in working time when the model has the "_w"
+    def _wait_s(self, tr, field):
+        """Seconds of a mined wait: in working time when the model has the "_w"
         quantiles (waits that end in a session), else in wall-clock time."""
         qw = tr.get(field + '_w')
         if qw:
             now = self.start_s + self.env.now
             end = self.clock.from_working(self.clock.to_working(now) + sample_quantiles(qw, self.rng))
-            return self.env.timeout(max(0.0, end - now))
-        return self.env.timeout(sample_quantiles(tr[field], self.rng))
+            return max(0.0, end - now)
+        return sample_quantiles(tr[field], self.rng)
+
+    def _pause(self, cid, seconds):
+        """A wait within a stage visit (mostly the customer's). For a case of the demand
+        spike's cohort it can be shortened while it runs (_speed_up: reminder or call);
+        other cases get a plain timeout, so the other scenarios are unchanged."""
+        if cid not in self.cohort:
+            yield self.env.timeout(seconds)
+            return
+        c = self.cases[cid]
+        wf = c.get('wait_factor')
+        if wf and wf[0] == len(c['stages']):
+            seconds *= wf[1]
+        end = self.env.now + seconds
+        while True:
+            wake = c['wake'] = self.env.event()
+            timer = self.env.timeout(max(0.0, end - self.env.now))
+            res = yield timer | wake
+            if wake not in res:
+                break
+            end = self.env.now + (end - self.env.now) * wake.value
+        c.pop('wake', None)
+
+    def _speed_up(self, cid, token, factor):
+        """Multiply the remaining waits of the case's current stage visit by factor."""
+        c = self.cases[cid]
+        if c['end'] is not None or len(c['stages']) != token:
+            return
+        old = c.get('wait_factor')
+        c['wait_factor'] = (token, factor * (old[1] if old and old[0] == token else 1.0))
+        wake = c.get('wake')
+        if wake is not None and not wake.triggered:
+            wake.succeed(factor)
 
     # ---------------------------------------------------------------- calendar
     def _calendar(self):
@@ -183,14 +241,19 @@ class Simulator:
             if wd in self.cal_days:
                 present = [w for w, spec in self.sm.workers.items()
                            if self.rng.random() < min(1.0, spec['active_day_share'] * self.day_factor[wd])]
+                team = sorted({w for ws in self.esc_team.values() for w in ws})
+                esc_present = [w for w in team if self.esc_rng.random() < min(
+                    1.0, self.sm.m['workers'][w]['active_day_share'] * self.day_factor[wd])]
                 yield self.env.timeout(max(0.0, self._seconds_until(day0.replace(hour=self.h_min))))
                 for w in present:
                     self.on_shift.add(w)
                     self.shift_seconds[w] += (self.h_max - self.h_min) * 3600
                     if w not in self.busy:
                         self._serve(w)
+                self.esc_on_shift.update(esc_present)
                 yield self.env.timeout(max(0.0, self._seconds_until(day0.replace(hour=self.h_max))))
                 self.on_shift.clear()
+                self.esc_on_shift.clear()
             day0 += timedelta(days=1)
             yield self.env.timeout(max(0.0, self._seconds_until(day0)))
 
@@ -242,7 +305,11 @@ class Simulator:
         while True:
             now = self.local(self.env.now)
             slot = now.weekday() * 24 + now.hour
-            n = self.rng.poisson(rates[slot])
+            # demand spike: the rate of the hours that start during it (a factor of 1
+            # leaves the draws, and so every other scenario, unchanged)
+            factor = self.disruption.arrival_factor() if self.disruption is not None else 1.0
+            n = self.rng.poisson(rates[slot] * factor)
+            self.arrival_log.append((self.env.now, n))
             offsets = np.sort(self.rng.uniform(0, 3600, n))
             t_hour = self.env.now
             for off in offsets:
@@ -256,6 +323,8 @@ class Simulator:
         flags = {f for f, p in self.sm.m['case_flags'].items() if self.rng.random() < p}
         self.cases[cid] = {'arrival': self.env.now, 'flags': flags, 'stages': [], 'end': None,
                            'outcome': None, 'offers': 0}
+        if self.disruption is not None and self.disruption.arrival_factor() != 1.0:
+            self.cohort.add(cid)
         for o in self.observers:
             o.on_arrival(cid, self.env.now)
         self.env.process(self._case(cid))
@@ -341,14 +410,14 @@ class Simulator:
             k = int(sample_choice(tr['n_sessions'], self.rng))
             if k == 0:
                 q = tr.get('visit_duration_no_session') or tr['visit_duration']
-                yield self.env.timeout(sample_quantiles(q, self.rng))
+                yield from self._pause(cid, sample_quantiles(q, self.rng))
                 return
-            yield self._wait(tr, 'initial_delay')
+            yield from self._pause(cid, self._wait_s(tr, 'initial_delay'))
             for i in range(k):
                 yield from self._session(cid, st['work_item'])
                 if i < k - 1:
-                    yield self._wait(tr, 'gap')
-            yield self._wait(tr, 'tail')
+                    yield from self._pause(cid, self._wait_s(tr, 'gap'))
+            yield from self._pause(cid, self._wait_s(tr, 'tail'))
         except simpy.Interrupt:
             return
 
@@ -389,7 +458,12 @@ class Simulator:
         self.disruption = layer
         self.recovery = layer.cfg.get('recovery')
         if self.recovery:
-            self.esc = simpy.Resource(self.env, self.recovery['escalate']['capacity'])
+            spec = self.recovery['escalate']
+            self.esc_item = spec['work_items']
+            self.esc_team = escalation_team(self.sm.m, self.sm.pool, list(self.esc_item.values()),
+                                            spec['team_per_item'])
+        if layer.mechanism == 'arrival_surge':
+            self.env.process(self._spike_watch())
 
     def _notify(self, name, *args):
         for o in self.observers:
@@ -399,11 +473,11 @@ class Simulator:
 
     def allowed_actions(self, d):
         """Action mask for decision d: the failure's allowed actions, escalate only
-        while an escalation slot is free."""
+        while a backup worker for the step is free."""
         if not self.recovery:
             return ['do_nothing']
         acts = list(self.recovery['allowed'][d.cause or d.failure_type])
-        if 'escalate' in acts and self.esc.count + len(self.esc.queue) >= self.esc.capacity:
+        if 'escalate' in acts and not self.escalation_free(d.cause or d.failure_type):
             acts.remove('escalate')
         cap = self.recovery['retry'].get('max_per_case')
         if 'retry' in acts and cap is not None and self.cases[d.cid].get('retries', 0) >= cap:
@@ -441,12 +515,25 @@ class Simulator:
         end = self.clock.from_working(self.clock.to_working(now) + hours * 3600)
         return self.env.timeout(max(0.0, end - now))
 
-    def _escalate(self):
-        """Senior team handles the step; True if it succeeds."""
+    def escalation_free(self, cause):
+        """Backup workers for the step of this failure, on shift and free (sorted)."""
+        return [w for w in self.esc_team.get(self.esc_item.get(cause), [])
+                if w in self.esc_on_shift and w not in self.esc_busy]
+
+    def escalation_size(self, cause):
+        return len(self.esc_team.get(self.esc_item.get(cause), []))
+
+    def _escalate(self, cause):
+        """A free backup worker does the step by hand (handling time assumed: a manual
+        workaround, slower than the logged system-supported session); True if it
+        succeeds. Taken at once, so the worker is busy before the next decision."""
         spec = self.recovery['escalate']
-        with self.esc.request() as req:
-            yield req
+        w = self.escalation_free(cause)[0]
+        self.esc_busy.add(w)
+        try:
             yield self._working_timeout(float(self.rng.uniform(*spec['handling_working_h']['uniform'])))
+        finally:
+            self.esc_busy.discard(w)
         return self.rng.random() < spec['success_p']
 
     def _blocked(self, cid, stage, still_blocked):
@@ -495,9 +582,44 @@ class Simulator:
                 self.cases[cid]['rework_delay'] = 3600 * float(self.rng.uniform(*spec['rework_delay_h']['uniform']))
             return self.BYPASS
         if action == 'escalate':
-            ok = yield from self._escalate()
+            ok = yield from self._escalate(cause)
             return self.BYPASS if ok else still_blocked()
         raise ValueError(f'action {action!r} does not apply to a blocked step ({cause})')
+
+    def _spike_watch(self):
+        """Demand spike trigger: during working hours, a case of the spike's cohort in a
+        customer-facing stage that is still on track but within the alert slack of its
+        stage deadline gets one decision per stage visit."""
+        d = self.disruption
+        trig = d.spec['trigger']
+        stages, slack_s = set(trig['stages']), trig['slack_h'] * 3600
+        yield self.env.timeout(max(0.0, d.onset - self.env.now))
+        while True:
+            if self.on_shift:
+                now = self.env.now
+                for cid in sorted(self.cohort):
+                    c = self.cases[cid]
+                    if c['end'] is not None:
+                        self.cohort.discard(cid)
+                        continue
+                    stage, token = c['stages'][-1][0], len(c['stages'])
+                    if stage not in stages or c.get('alerted') == token:
+                        continue
+                    if 0.0 < c['arrival'] + d.deadlines[stage] - now <= slack_s:
+                        c['alerted'] = token
+                        self.env.process(self._spike_decision(cid, stage, token))
+            yield self.env.timeout(3600)
+
+    def _spike_decision(self, cid, stage, token):
+        action = yield from self._decide(cid, self.disruption.failure_type, stage, 1)
+        rc, ft = self.recovery, self.disruption.failure_type
+        if action == 'reassign':
+            self.cases[cid]['priority_visit'] = (stage, token)      # its calls go first
+        elif action == 'substitute':
+            self._speed_up(cid, token, float(self.rng.uniform(*rc['substitute'][ft]['wait_factor']['uniform'])))
+        elif action == 'escalate':
+            if (yield from self._escalate(ft)):
+                self._speed_up(cid, token, float(self.rng.uniform(*rc['escalate']['chase_wait_factor']['uniform'])))
 
     def _documents_decision(self, cid, ftype, stage, nxt, exits):
         """A case routed to the incomplete loop during a documents surge: the action
@@ -511,7 +633,7 @@ class Simulator:
             yield self._working_timeout(rc['retry']['delay_working_h'])
             avoided = self.rng.random() < rc['retry']['documents_success_p']
         elif action == 'escalate':
-            avoided = yield from self._escalate()
+            avoided = yield from self._escalate(ftype)
         elif action == 'reassign':
             c = self.cases[cid]
             c['priority_visit'] = (nxt, len(c['stages']) + 1)   # the coming incomplete visit

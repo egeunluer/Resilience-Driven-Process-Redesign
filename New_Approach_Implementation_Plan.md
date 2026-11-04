@@ -659,10 +659,151 @@ cost/N, do-nothing ≈ 1, lower is better):**
   week-long cells. The Phase 9 benchmark should use ≥ 16 seeds per cell (176+ episodes),
   ~25 min for all baselines.
 
-### Phase 9 — Training ⬜
-- **`train_loan_DRL.py`:** MaskablePPO with constant LR, entropy bonus and reward normalisation.
-- **Evaluation and selection:** 32-episode fixed-seed evaluation; keep every checkpoint
-  and pick the final model on a separate seed set.
+**Follow-up: escalation by real backup workers** (decided with the user, replacing the
+2 abstract slots):
+- **Who:** for each work item an escalation does by hand, the 2 workers with the most
+  sessions for it *outside* the top-3 pool (the next ranks after the pool's):
+  - D1 → `W_Complete application`: User_10, User_61;
+  - D2 → `W_Call after offers`: User_24, User_28;
+  - D3 → `W_Call incomplete files`: User_29, User_28.
+- **Mined:** who they are, what they are qualified for, and their attendance (share of days
+  present). They work the normal shift and take only escalations.
+- **Escalate is masked** while none of them is on shift and free, so it is unavailable at
+  night and on Sundays.
+- **Still assumed:**
+  - that such a backup role exists, and its size of 2 per work item (swept in sensitivity);
+  - the handling time, 0.5–2 working hours: a manual workaround is slower than the logged
+    session (0.3–2.7 min median), and with logged times two workers could clear ~50
+    cases an hour, so escalation would no longer be scarce;
+  - the success probability, 0.95.
+- **Do-nothing runs are unchanged** (the team's attendance has its own random stream), so
+  the Loss_base calibration stays valid; checked bit-for-bit on D2 168 h.
+- **Baseline benchmark rerun** (same 11 cells × 8 seeds). Policies that never escalate are
+  unchanged:
+
+  | Policy | Before (2 slots) | Now (backup workers) |
+  |---|---|---|
+  | do-nothing | 1.017 | 1.017 |
+  | always substitute | 0.608 | 0.608 |
+  | always escalate | 0.774 | 0.856 |
+  | greedy | 0.748 | 0.671 |
+  | rule | 0.583 | 0.672 |
+
+  - **Escalation is scarcer now:** the backup workers are absent on some days and at
+    night.
+  - **The rule lost most on D2 168 h** (3.28 → 4.51, worse than do-nothing); not yet
+    diagnosed.
+  - **Best baseline is now always-substitute (0.61)**, then greedy and rule (0.67). On the
+    robustness cells all are within noise of do-nothing (0.33–0.36).
+
+### Phase 9 — Training 🔄
+- **`train_loan_DRL.py`:** MaskablePPO with constant LR and entropy bonus.
+- **Evaluation and selection:** 33-episode fixed-seed evaluation (3 per cell); keep every
+  checkpoint and pick the final model on the benchmark seeds (200+).
+- **`baselines_loan.py --agent NAME=PATH`** benchmarks trained models on the same episodes
+  as the baselines.
+
+**Run 1: process-wide reward** (`loan_ppo_w1_s0`, 500k steps, reward = change in the
+process-wide Loss between two decisions, VecNormalize):
+- Healthy training (entropy −1.12 → −0.85, explained variance 0.94–0.99, approx_kl ≈ 0.01),
+  but the evaluation score swung between 0.57 and 0.89 without a trend.
+- Benchmark (11 cells × 8 seeds): best checkpoint 0.811 (276k), against always-substitute
+  0.608, greedy 0.671, rule 0.672, do-nothing 1.017. The checkpoint with the best
+  evaluation score (0.566) scored 0.891: 3 episodes per cell are too few to select on.
+- Learned the documents surge (D3 168/240 h: 0.30–0.60 vs do-nothing 0.98/1.39), not
+  the long D1 outage (3.1–3.6 vs substitute 0.49): it retried instead of substituting.
+- **Diagnosis:** the reward was badly attributed. ΔLoss between two decisions is the
+  damage of all ~1,900 open cases, and a delay shows up weeks later, hundreds of
+  decisions on; with gae_lambda 0.95 the credit fades within ~100 decisions. The cost of
+  substituting was immediate and certain, its benefit invisible.
+
+**Changes after run 1:**
+- **Retry masked in D1/D2 outages.** A waiting case resumes the moment the service is
+  restored, so retry could only resume it later and at a cost; it stays for missing
+  documents (re-fetch). The rule baseline now waits in an outage unless the deadline is
+  within 7 days (then escalate, or substitute without a free backup worker).
+- **Per-case reward** (`RIMS_REWARD=case`, default; `global` reproduces run 1):
+  - `QTracker.case_loss()`: at every instant the Loss rate is split equally among the
+    off-track cases, so the shares add up to the Loss exactly (checked to 1e-14). In
+    D1 168 h the cases that get decisions hold ~60% of the Loss, in D2 72 h / D3 ~21–26%.
+  - An expired case is charged as if it stayed off track until the horizon, otherwise
+    leaving the open set would make an expiry free.
+  - r_i = −( w·N[e]·[(1−β)·ΔL_case,i + β·ΔLoss_i] / Loss_base[e] + κ_a ), β = 0.2:
+    the case's own share up to its next decision or the horizon, plus a fifth of the
+    process-wide term for the effects on other cases (reassign, scarce backup workers).
+    Scaled by N[e] (per-decision units, a positive constant per scenario), no VecNormalize.
+  - **`loan_ppo.CaseMaskablePPO`:** collects whole disruption episodes, regroups the
+    steps into per-case chains (1.1–1.3 decisions long), recomputes values and
+    log-probs with the current policy, then the usual GAE and PPO update.
+  - The evaluation objective is unchanged, so runs are directly comparable; trained
+    from scratch.
+
+**Run 2: per-case reward, β = 0.2** (`loan_ppo_w1_s0_case_b0.2`, 100k steps): collapsed to
+do-nothing (entropy −0.83 → −0.15, explained variance ≈ 0, value loss 26–100).
+- **Cause:** the β part charged the process-wide Loss *until the next decision*. After the
+  last decision of an episode (day 7 in D2 168 h) that is all the remaining Loss, up to
+  day 50: one random case was charged ~1,100 against a normal 0–3. That outlier dominated
+  the value targets and the normalised advantages, and only the certain cost κ remained.
+- **The per-case part itself points the right way:** in D1 168 h a case costs 1.4–1.6
+  when waiting and 0.31–0.34 when substituted; in D1 24 h ~0 vs 0.30. With β = 0 the
+  largest per-case cost is ~19. A bounded process-wide term (e.g. a fixed 24 h window
+  after the decision) is left for later.
+
+**Environment v2** (decided with the user):
+- **Every shock lasts 72–120 h** (uniform, hidden); short outages removed; the training
+  cycle is one cell per scenario, length drawn.
+- **D4 demand spike**, arrivals × 3 for the shock's length. Do-nothing sweep
+  (`sweep_demand_spike.py`, 16 seeds, paired with the same episodes without a spike):
+
+  | Factor | Extra applications | Loss (Q-days) | Lowest 24 h Q | Waits > 1 working day |
+  |---|---|---|---|---|
+  | 1 | 0 | 0.005 | 0.886 | 8 |
+  | 2 | 327 | 0.035 | 0.877 | 13 |
+  | 3 | 682 | 0.138 | 0.866 | 3–7 |
+  | 5 | 1,370 | 0.56 | 0.828 | 50 |
+  | 8 | 2,469 | 1.41 | 0.765 | 2,190 |
+
+  At × 3 the pool absorbs the work; Q first *rises* (young cases), and the Loss comes at
+  days ~30–45, when the spike's cohort reaches its deadlines together. So the planned
+  "waits > 1 working day" trigger would fire ~5 times per episode.
+- **D4 trigger (option A):** a spike-cohort case in `await_customer` or `incomplete`, on
+  track, slack ≤ 48 h, once per stage visit, in working hours. Actions: reassign (calls
+  first), substitute (written reminder: remaining customer waits × U[0.7, 0.9]),
+  escalate (personal call by a `W_Call after offers` backup worker: × U[0.3, 0.6],
+  success 0.95). Only cohort cases get shortenable waits, so D1–D3 are bit-for-bit
+  unchanged (checked against their calibration).
+- **Observation: 38 features** (+ scenario D4, cause overload, arrivals of the last 24 h,
+  work waiting for a worker, spike-cohort flag).
+- **Calibration (do-nothing, seeds 0–15):**
+
+  | Scenario | Loss_base (Q-days) | sd | N decisions |
+  |---|---|---|---|
+  | D1 offer outage | 0.056 | 0.053 | 649 |
+  | D2 telephony outage | 0.030 | 0.035 | 872 |
+  | D3 documents surge | 0.016 | 0.014 | 276 |
+  | D4 demand spike | 0.149 | 0.084 | 250 |
+
+- **Training settings for run 3:** per-case reward with **β = 0** (now the default);
+  evaluation on **8 episodes per scenario** (32, seeds 1000+), since 3 per cell picked
+  lucky checkpoints in run 1.
+- **Baselines on v2** (4 scenarios × 16 seeds, seeds 200+; lower is better):
+
+  | Policy | Objective | vs do-nothing | D1 | D2 | D3 | D4 |
+  |---|---|---|---|---|---|---|
+  | do-nothing | 1.164 | — | 1.16 | 0.95 | 1.41 | 1.14 |
+  | always retry | 0.954 | −0.21 ± 0.23 | 1.16 | 0.95 | 0.57 | 1.14 |
+  | always reassign | 1.085 | −0.08 ± 0.23 | 1.16 | 0.95 | 0.96 | 1.26 |
+  | always substitute | 0.967 | −0.20 ± 0.20 | 0.34 | 0.98 | 1.41 | 1.14 |
+  | always escalate | 1.068 | −0.10 ± 0.23 | 0.95 | 0.97 | 1.23 | 1.13 |
+  | greedy | 0.931 | −0.23 ± 0.29 | 0.23 | 0.84 | 1.47 | 1.18 |
+  | **rule** | **0.814** | **−0.35 ± 0.27** | 0.37 | 1.30 | 0.57 | 1.01 |
+
+  The best baseline per scenario would give ~0.66: room for an agent that adapts. D2
+  has little room (written contact adds about as much delay as the rest of the outage);
+  D4 barely responds to any action with the assumed effect sizes.
+- **Note on noise:** an action that draws random numbers (handling time, effects) shifts
+  the main random stream, so paired episodes diverge after the first action (e.g. a
+  Saturday with no worker on shift, P = 0.03, in one run and not the other).
 
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**

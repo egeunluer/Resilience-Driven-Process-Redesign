@@ -17,6 +17,13 @@ Recovery (recovered()): the disruption is over, every step it blocked has been c
 out (the disruption layer calls clear_hit(); leaving the stage or ending also clears a
 hit), and the rolling mean of Q over the last 24 h is back at Q_ref or above.
 
+Per-case shares (case_loss(), for the per-case reward of loan_env): at every instant the
+Loss rate max(0, Q_ref - Q)/Q_ref is split equally among the cases that are off track,
+so the shares of all cases add up to the Loss exactly. A running integral G(t) of the
+rate per off-track case is kept; a case accrues dG while it is off track. A case that
+expires is charged dG from its expiry on (as if it stayed off track): otherwise its
+leaving the open set would make an expiry look free.
+
 Deadline mode 'age' (default, the agreed definition) measures case age against D_k;
 'sojourn' (time in the current stage against a stage-duration deadline) was compared
 in Phase 4 and had a lower signal-to-noise ratio, so it is kept only as an option.
@@ -48,6 +55,10 @@ class QTracker:
         self.history = deque()   # (t, Q) breakpoints, kept for the rolling mean
         self.window = 86400.0
         self.hits = {}           # id -> visit token of the stage it was hit in
+        self.g = 0.0             # integral of the Loss rate per off-track case
+        self.share = {}          # id -> Loss share accrued in closed off-track spells
+        self.off_since = {}      # id -> g when its current off-track spell began
+        self.expired_at = {}     # id -> g at its expiry
 
     # ---------------------------------------------------------------- state
     @property
@@ -59,8 +70,11 @@ class QTracker:
         if dt > 0:
             q = self.q
             self.q_area += q * dt
-            if self.q_ref is not None:
-                self.loss += max(0.0, self.q_ref - q) / self.q_ref * dt
+            if self.q_ref is not None and q < self.q_ref:
+                rate = (self.q_ref - q) / self.q_ref * dt
+                self.loss += rate
+                if self.off:
+                    self.g += rate / self.off
             self.t = t
 
     def _mark(self):
@@ -78,6 +92,7 @@ class QTracker:
             self._integrate_to(tc)
             c[3] = True
             self.off += 1
+            self.off_since[cid] = self.g
             self._mark()
         self._integrate_to(t)
 
@@ -86,11 +101,13 @@ class QTracker:
         self.hits.pop(cid, None)          # a hit case left the stage it was hit in
         if c[3]:
             self.off -= 1
+            self._close(cid)
         c[1], c[2] = stage, c[2] + 1
         cross = (c[0] if self.mode == 'age' else t) + self.deadline.get(stage, float('inf'))
         c[3] = t >= cross
         if c[3]:
             self.off += 1
+            self.off_since[cid] = self.g
         elif cross < float('inf'):
             heapq.heappush(self.heap, (cross, cid, c[2]))
 
@@ -115,10 +132,27 @@ class QTracker:
         self.open -= 1
         if c[3]:
             self.off -= 1
+            self._close(cid)
         self._mark()
 
     def on_expiry(self, cid, t):
+        self.advance(t)
         self.expiries += 1
+        self.expired_at[cid] = self.g
+
+    def _close(self, cid):
+        """End the off-track spell of cid (its share accrued so far is kept)."""
+        self.share[cid] = self.share.get(cid, 0.0) + self.g - self.off_since.pop(cid)
+
+    def case_loss(self, cid):
+        """Loss share of case cid so far (since the start; differences are what matter),
+        including the charge after an expiry. Call advance(t) first."""
+        v = self.share.get(cid, 0.0)
+        if cid in self.off_since:
+            v += self.g - self.off_since[cid]
+        if cid in self.expired_at:
+            v += self.g - self.expired_at[cid]
+        return v
 
     def hit(self, cid):
         """Register that the disruption blocked a step of case cid."""
