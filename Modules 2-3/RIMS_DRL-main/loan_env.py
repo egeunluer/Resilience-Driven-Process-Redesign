@@ -21,16 +21,19 @@ Per-case reward (reward='case'): the decisions of one case form their own chain,
 each decision is charged its case's share of the Loss (metrics.QTracker.case_loss)
 from this decision to the case's next decision (or the horizon), so the credit no
 longer has to travel through hundreds of other cases' decisions:
-    r_i = -N[e] * ( w * [(1-beta) dL_case,i + beta dLoss_i] / Loss_base[e]  +  kappa[a] c_p )
-          = -( w N[e] [(1-beta) dL_case,i + beta dLoss_i] / Loss_base[e]  +  kappa[a] )
-The beta part (process-wide Loss between this decision and the next, as in 'global')
-would keep the effect on other cases (reassign jumps the queue, escalation uses a backup
-worker another case may need). Default beta = 0: after the last decision of an episode
-that part is all the Loss still to come (weeks of it), which landed on one random case
-and made training collapse (run loan_ppo_w1_s0_case_b0.2). The case share is only known later: step() returns the
-immediate part (cost + beta part), and at the episode end info['case_trace'] carries,
-per step, the case id and the delayed part; loan_ppo.CaseMaskablePPO assembles the
-chains. The factor N[e] puts rewards in per-decision units (an action costs kappa);
+    r_i = -N[e] * ( w * [(1-beta) dL_case,i + beta S_i] / Loss_base[e]  +  kappa[a] c_p )
+          = -( w N[e] [(1-beta) dL_case,i + beta S_i] / Loss_base[e]  +  kappa[a] )
+The beta part S_i is a share of the process-wide Loss, for the effect on other cases:
+in D3 the cases with a decision carry only ~5% of the Loss, which comes 3-6 weeks
+later on cases queued behind the extra document loops. Windowed sharing: the Loss
+accrued at time s is split equally among the decisions made in [s - window_h, s]
+(window_h None: since the onset), so S_i is bounded by the Loss of its own window and
+shared with every decision taken alongside it. (The first version, the process-wide
+Loss between a decision and the next, gave the last decision of an episode all the
+Loss still to come, on one random case, and made training collapse: run
+loan_ppo_w1_s0_case_b0.2.) Both parts are only known later: step() returns the cost,
+and at the episode end info['case_trace'] carries, per step, the case id and the
+delayed part; loan_ppo.CaseMaskablePPO assembles the chains. The factor N[e] puts rewards in per-decision units (an action costs kappa);
 it is a positive constant per scenario, so it does not change the best policy.
 The episode objective (evaluation, benchmark) is the same in both modes.
 
@@ -56,7 +59,8 @@ class LoanEnv(Env):
     metadata = {'render_modes': []}
 
     def __init__(self, stage_model, disruptions, calibration, cycle, w=1.0, norm=None,
-                 reward='global', beta=0.0, warmup_days=WARMUP_DAYS, horizon_days=HORIZON_DAYS):
+                 reward='global', beta=0.0, window_h=None, warmup_days=WARMUP_DAYS,
+                 horizon_days=HORIZON_DAYS):
         """stage_model / disruptions / calibration: paths or dicts. The calibration's
         "pool" (constrained worker pool) is applied to the stage model. `norm` maps
         cycle_key(scenario, level) to {'loss_base': seconds, 'n_decisions': N}; default:
@@ -72,6 +76,7 @@ class LoanEnv(Env):
         if reward not in ('global', 'case'):
             raise ValueError(f'reward must be global or case, not {reward!r}')
         self.reward, self.beta = reward, beta
+        self.window_s = window_h * 3600 if window_h else None
         self.norm = norm if norm is not None else self.cal.get('loss_base_by_scenario', {})
         missing = [self._key(c) for c in self.cycle if self._key(c) not in self.norm]
         if missing:
@@ -124,7 +129,15 @@ class LoanEnv(Env):
         self.steps = 0
         self.scale = n['n_decisions'] if self.reward == 'case' else 1.0
         self._trace = []          # per step: (case id, its Loss share at the decision)
+        self._dec_t = []          # per step: decision time
+        self._loss_at = {}        # time -> process Loss, at decisions and window ends
         return self._obs(), {}
+
+    def _mark_loss(self, t):
+        """Record the process Loss at t (end of a decision's window)."""
+        yield self.ep.sim.env.timeout(t - self.ep.now)
+        self.ep.tr.advance(t)
+        self._loss_at[t] = self.ep.tr.loss
 
     def _decision(self):
         return self.ep.sim.pending[0]
@@ -138,7 +151,12 @@ class LoanEnv(Env):
         d = ep.sim.pending.popleft()
         name = self.actions[int(action)]
         if self.reward == 'case':
+            ep.tr.advance(ep.now)
             self._trace.append((d.cid, ep.tr.case_loss(d.cid)))
+            self._dec_t.append(ep.now)
+            self._loss_at[ep.now] = ep.tr.loss
+            if self.window_s and ep.now + self.window_s < ep.end:
+                ep.sim.env.process(self._mark_loss(ep.now + self.window_s))
         if name not in ep.sim.allowed_actions(d):
             raise ValueError(f'action {name!r} is masked for {d}')
         d.event.succeed(name)
@@ -150,7 +168,7 @@ class LoanEnv(Env):
         pending = ep.run_to_decision()
         d_loss = ep.tr.loss - self._loss_mark
         self._loss_mark = ep.tr.loss
-        wg = self.beta if self.reward == 'case' else 1.0
+        wg = 0.0 if self.reward == 'case' else 1.0      # case: the Loss parts come in case_trace
         r = -self.scale * (self.w * wg * d_loss / self.loss_base + self.kappa[name] * self.c_p)
         info = {}
         if not pending:
@@ -174,17 +192,38 @@ class LoanEnv(Env):
         return obs, float(r), not pending, False, info
 
     def _case_trace(self):
-        """Case id and delayed reward (the case's Loss share up to its next decision or
-        the horizon) per step of the finished episode."""
-        tr, k = self.ep.tr, self.scale * self.w * (1 - self.beta) / self.loss_base
+        """Case id and delayed reward per step of the finished episode: the case's Loss
+        share up to its next decision or the horizon, and (beta) the windowed share."""
+        tr, k = self.ep.tr, self.scale * self.w / self.loss_base
         nxt = {}
         delayed = [0.0] * len(self._trace)
         for i in range(len(self._trace) - 1, -1, -1):
             cid, at = self._trace[i]
             later = nxt[cid] if cid in nxt else tr.case_loss(cid)
-            delayed[i] = -k * (later - at)
+            delayed[i] = -k * (1 - self.beta) * (later - at)
             nxt[cid] = at
+        if self.beta:
+            delayed = (np.array(delayed) - k * self.beta * self.window_shares()).tolist()
         return {'cid': [c for c, _ in self._trace], 'delayed': delayed}
+
+    def window_shares(self):
+        """Per step, its share of the process Loss: the Loss accrued in each interval
+        goes in equal parts to the decisions whose window [t_i, t_i + window) holds it.
+        The shares add up to the Loss from the first decision on (up to the end of the
+        last window)."""
+        end = self.ep.end
+        t = np.array(self._dec_t)
+        t_end = np.minimum(t + self.window_s, end) if self.window_s else np.full(len(t), end)
+        self._loss_at[end] = self.ep.tr.loss
+        cuts = np.array(sorted(self._loss_at))
+        cuts = cuts[cuts <= t_end.max()]
+        loss = np.array([self._loss_at[c] for c in cuts])
+        shares = np.zeros(len(t))
+        for a, dl in zip(cuts[:-1], np.diff(loss)):
+            on = (t <= a) & (t_end > a)
+            if dl > 0 and on.any():
+                shares[on] += dl / on.sum()
+        return shares
 
     @property
     def mean_cycle_time(self):
