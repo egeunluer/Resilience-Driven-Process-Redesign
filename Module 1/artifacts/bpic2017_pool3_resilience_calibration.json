@@ -47,78 +47,61 @@
   "validation": 2457051.9,
   "incomplete": 3063756.3
  },
- "q_mean": 0.9010318837361514,
- "q_daily_sd": 0.01040803377307126,
- "q_daily_p1": 0.879204728783009,
- "baseline_loss_s_per_day": 8550.845245196519,
- "baseline_delay_expiries_per_day": 1.471875,
+ "q_mean": 0.9025497853822866,
+ "q_daily_sd": 0.009762268694679275,
+ "q_daily_p1": 0.8814432341245015,
+ "baseline_loss_s_per_day": 8419.698542970433,
+ "baseline_delay_expiries_per_day": 1.4583333333333333,
  "loss_base_by_scenario": {
   "D1_offer_outage:2": {
-   "loss_base": 14961.817836478334,
-   "loss_sd": 11955.046213828287,
-   "loss_normal": 404475.4802559263,
-   "loss_normal_sd": 14296.800782228609,
-   "n_decisions": 649.3125,
+   "loss_base": 15347.316704244444,
+   "loss_sd": 9072.511310054986,
+   "loss_normal": 401105.94473217195,
+   "loss_normal_sd": 21040.717668535275,
+   "n_decisions": 647.875,
    "n_seeds": 16,
-   "time_to_recover_d": 4.901041666666666
+   "time_to_recover_d": 5.265625
   },
   "D2_telephony_outage:2": {
-   "loss_base": 14479.857563726768,
-   "loss_sd": 18892.814320126232,
-   "loss_normal": 404475.4802559263,
-   "loss_normal_sd": 14296.800782228609,
-   "n_decisions": 872.125,
+   "loss_base": 13149.962610901119,
+   "loss_sd": 7871.570221174828,
+   "loss_normal": 401105.94473217195,
+   "loss_normal_sd": 21040.717668535275,
+   "n_decisions": 889.6875,
    "n_seeds": 16,
-   "time_to_recover_d": 4.138020833333333
+   "time_to_recover_d": 6.143229166666666
   },
   "D3_documents_surge:2": {
-   "loss_base": 14825.015081747544,
-   "loss_sd": 13712.929574141031,
-   "loss_normal": 404475.4802559263,
-   "loss_normal_sd": 14296.800782228609,
-   "n_decisions": 275.6875,
+   "loss_base": 9461.472777222156,
+   "loss_sd": 3845.168229122043,
+   "loss_normal": 401105.94473217195,
+   "loss_normal_sd": 21040.717668535275,
+   "n_decisions": 286.1875,
    "n_seeds": 16,
-   "time_to_recover_d": 4.138020833333333
-  },
-  "D4_demand_spike:2": {
-   "loss_base": 2711.954616840565,
-   "loss_sd": 17846.25768406321,
-   "loss_normal": 404475.4802559263,
-   "loss_normal_sd": 14296.800782228609,
-   "n_decisions": 250.0,
-   "n_seeds": 16,
-   "time_to_recover_d": 4.138020833333333
+   "time_to_recover_d": 4.3359375
   },
   "D1_offer_outage:2:cycle": {
-   "loss_base": 14961.817836478334,
-   "loss_normal": 404475.4802559263,
-   "n_decisions": 649.3125,
+   "loss_base": 15347.316704244444,
+   "loss_normal": 401105.94473217195,
+   "n_decisions": 647.875,
    "cells": [
     "D1_offer_outage:2"
    ]
   },
   "D2_telephony_outage:2:cycle": {
-   "loss_base": 14479.857563726768,
-   "loss_normal": 404475.4802559263,
-   "n_decisions": 872.125,
+   "loss_base": 13149.962610901119,
+   "loss_normal": 401105.94473217195,
+   "n_decisions": 889.6875,
    "cells": [
     "D2_telephony_outage:2"
    ]
   },
   "D3_documents_surge:2:cycle": {
-   "loss_base": 14825.015081747544,
-   "loss_normal": 404475.4802559263,
-   "n_decisions": 275.6875,
+   "loss_base": 9461.472777222156,
+   "loss_normal": 401105.94473217195,
+   "n_decisions": 286.1875,
    "cells": [
     "D3_documents_surge:2"
-   ]
-  },
-  "D4_demand_spike:2:cycle": {
-   "loss_base": 2711.954616840565,
-   "loss_normal": 404475.4802559263,
-   "n_decisions": 250.0,
-   "cells": [
-    "D4_demand_spike:2"
    ]
   }
  },

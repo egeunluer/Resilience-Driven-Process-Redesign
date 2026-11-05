@@ -14,7 +14,21 @@ do-nothing episode over its undisrupted twin, Loss_normal[e] the twin's mean Los
 the decisions per episode, averaged over the scenario's cells of the training cycle
 (calibrate_loan_resilience.py, Phase 8). Episode objective (evaluation, benchmark):
     objective = w * (Loss - Loss_normal[e]) / Loss_base[e]  +  sum(kappa) / N[e]
-about 1 for do-nothing, 0 if the disruption did no harm at no cost.
+about 1 for do-nothing, 0 if the disruption did no harm at no cost. With the do-nothing
+twin (below) the episode's own do-nothing Loss replaces the calibrated mean:
+    objective = w * (1 + (Loss - Loss_twin) / Loss_base[e])  +  sum(kappa) / N[e]
+the same in expectation, without the episode-to-episode spread of normal operation
+(sd ~ Loss_base); exactly 1 for a do-nothing policy.
+
+Do-nothing twin (twin=True, per-case reward): at the end of every episode the same
+episode is replayed (same seed; the simulator's random streams are per source and per
+case, so the replay is the same world) with every decision answered do_nothing, and
+the reward counts only the difference: a case's own share minus its share in the twin
+over the same interval, the process Loss minus the twin's. Lateness that happens
+anyway (normal operation, ~180 cases late at any moment, or the disruption left
+alone) cancels case by case; what is left is what the actions changed. The twin does
+not depend on the agent's actions, so subtracting it does not change the best policy.
+Each episode is simulated twice.
 
 Global reward (reward='global', the first setup): between two decisions
     r = -( w * dLoss / Loss_base[e]  +  kappa[a] * c_p[e] ),  c_p = 1 / N[e]
@@ -63,7 +77,7 @@ class LoanEnv(Env):
     metadata = {'render_modes': []}
 
     def __init__(self, stage_model, disruptions, calibration, cycle, w=1.0, norm=None,
-                 reward='global', beta=0.0, window_h=None, warmup_days=WARMUP_DAYS,
+                 reward='global', beta=0.0, window_h=None, twin=True, warmup_days=WARMUP_DAYS,
                  horizon_days=HORIZON_DAYS):
         """stage_model / disruptions / calibration: paths or dicts. The calibration's
         "pool" (constrained worker pool) is applied to the stage model. `norm` maps
@@ -81,6 +95,7 @@ class LoanEnv(Env):
             raise ValueError(f'reward must be global or case, not {reward!r}')
         self.reward, self.beta = reward, beta
         self.window_s = window_h * 3600 if window_h else None
+        self.twin = twin and reward == 'case'
         self.norm = norm if norm is not None else self.cal.get('loss_base_by_scenario', {})
         missing = [self._key(c) for c in self.cycle if self._key(c) not in self.norm]
         if missing:
@@ -120,6 +135,7 @@ class LoanEnv(Env):
             ep = Episode(self.sm, self.cfg, scenario, level, base_seed + 1_000_003 * k, self.cal,
                          duration_h=duration_h, warmup_days=self.warmup_days, horizon_days=self.horizon_days)
             if ep.run_to_decision():
+                self._seed = base_seed + 1_000_003 * k
                 break
             self.empty_episodes += 1
         else:
@@ -178,7 +194,11 @@ class LoanEnv(Env):
         info = {}
         if not pending:
             res = ep.result()
-            loss_ratio = (res['loss'] - self.loss_normal) / self.loss_base
+            if self.twin:
+                self._tw = self._run_twin()
+                loss_ratio = 1.0 + (res['loss'] - self._tw['loss'][ep.end]) / self.loss_base
+            else:
+                loss_ratio = (res['loss'] - self.loss_normal) / self.loss_base
             self.last_episode_info = {
                 'objective': self.w * loss_ratio + self.cost,
                 'loss_ratio': loss_ratio, 'cost_ratio': self.cost,
@@ -196,17 +216,54 @@ class LoanEnv(Env):
             obs = self._obs()
         return obs, float(r), not pending, False, info
 
+    def _run_twin(self):
+        """Replay the episode with every decision answered do_nothing, through the same
+        controller path as step(); returns the twin's tracker and G and the Loss at
+        every time the reward reads (decision times, window ends, the horizon)."""
+        scenario, level, duration_h = self.cell
+        ep = Episode(self.sm, self.cfg, scenario, level, self._seed, self.cal, duration_h=duration_h,
+                     warmup_days=self.warmup_days, horizon_days=self.horizon_days)
+        tr = ep.tr
+        tr.log_spells()
+        times = sorted(set(self._loss_at) | {self.ep.end})
+        g, loss = {}, {}
+
+        def sample():
+            for t in times:
+                if t > ep.now:
+                    yield ep.sim.env.timeout(t - ep.now)
+                tr.advance(t)
+                g[t], loss[t] = tr.g, tr.loss
+        ep.sim.env.process(sample())
+        while ep.run_to_decision():
+            d = ep.sim.pending.popleft()
+            d.event.succeed('do_nothing')
+            ep.sim.env.run(until=d.event)
+        for t in times:                 # the horizon ends the run before a sample there
+            if t not in g:
+                tr.advance(t)
+                g[t], loss[t] = tr.g, tr.loss
+        return {'tr': tr, 'g': g, 'loss': loss}
+
     def _case_trace(self):
         """Case id and delayed reward per step of the finished episode: the case's Loss
-        share up to its next decision or the horizon, and (beta) the windowed share."""
-        tr, k = self.ep.tr, self.scale * self.w / self.loss_base
+        share up to its next decision or the horizon, and (beta) the windowed share;
+        with the twin, both minus the twin's over the same interval."""
+        tr, k, end = self.ep.tr, self.scale * self.w / self.loss_base, self.ep.end
+        if self.twin:
+            tw, g = self._tw['tr'], self._tw['g']
+            own_twin = lambda cid, t: tw.case_loss_at(cid, t, g.__getitem__)
         nxt = {}
         delayed = [0.0] * len(self._trace)
         for i in range(len(self._trace) - 1, -1, -1):
             cid, at = self._trace[i]
-            later = nxt[cid] if cid in nxt else tr.case_loss(cid)
-            delayed[i] = -k * (1 - self.beta) * (later - at)
-            nxt[cid] = at
+            t_i = self._dec_t[i]
+            later, t_later = nxt[cid] if cid in nxt else (tr.case_loss(cid), end)
+            d = later - at
+            if self.twin:
+                d -= own_twin(cid, t_later) - own_twin(cid, t_i)
+            delayed[i] = -k * (1 - self.beta) * d
+            nxt[cid] = (at, t_i)
         if self.beta:
             delayed = (np.array(delayed) - k * self.beta * self.window_shares()).tolist()
         return {'cid': [c for c, _ in self._trace], 'delayed': delayed}
@@ -215,7 +272,7 @@ class LoanEnv(Env):
         """Per step, its share of the process Loss: the Loss accrued in each interval
         goes in equal parts to the decisions whose window [t_i, t_i + window) holds it.
         The shares add up to the Loss from the first decision on (up to the end of the
-        last window)."""
+        last window); with the twin, to the Loss minus the twin's (can be negative)."""
         end = self.ep.end
         t = np.array(self._dec_t)
         t_end = np.minimum(t + self.window_s, end) if self.window_s else np.full(len(t), end)
@@ -223,10 +280,12 @@ class LoanEnv(Env):
         cuts = np.array(sorted(self._loss_at))
         cuts = cuts[cuts <= t_end.max()]
         loss = np.array([self._loss_at[c] for c in cuts])
+        if self.twin:
+            loss = loss - np.array([self._tw['loss'][c] for c in cuts])
         shares = np.zeros(len(t))
         for a, dl in zip(cuts[:-1], np.diff(loss)):
             on = (t <= a) & (t_end > a)
-            if dl > 0 and on.any():
+            if dl and on.any():
                 shares[on] += dl / on.sum()
         return shares
 

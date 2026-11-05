@@ -61,6 +61,7 @@ class QTracker:
         self.share = {}          # id -> Loss share accrued in closed off-track spells
         self.off_since = {}      # id -> g when its current off-track spell began
         self.expired_at = {}     # id -> g at its expiry
+        self.spells = None       # log_spells(): id -> [(t_on, g_on, t_off, g_off)] of closed spells
 
     # ---------------------------------------------------------------- state
     @property
@@ -93,6 +94,8 @@ class QTracker:
             c[3] = True
             self.off += 1
             self.off_since[cid] = self.g
+            if self.spells is not None:
+                self.off_t[cid] = tc
             self._mark()
         self._integrate_to(t)
 
@@ -108,6 +111,8 @@ class QTracker:
         if c[3]:
             self.off += 1
             self.off_since[cid] = self.g
+            if self.spells is not None:
+                self.off_t[cid] = t
         elif cross < float('inf'):
             heapq.heappush(self.heap, (cross, cid, c[2]))
 
@@ -139,10 +144,36 @@ class QTracker:
         self.advance(t)
         self.expiries += 1
         self.expired_at[cid] = self.g
+        if self.spells is not None:
+            self.expired_t[cid] = t
 
     def _close(self, cid):
         """End the off-track spell of cid (its share accrued so far is kept)."""
-        self.share[cid] = self.share.get(cid, 0.0) + self.g - self.off_since.pop(cid)
+        g_on = self.off_since.pop(cid)
+        self.share[cid] = self.share.get(cid, 0.0) + self.g - g_on
+        if self.spells is not None:
+            self.spells.setdefault(cid, []).append((self.off_t.pop(cid), g_on, self.t, self.g))
+
+    def log_spells(self):
+        """From now on, keep every case's off-track spells and expiry with their times,
+        so that case_loss_at() can read a case's share at any later time (the do-nothing
+        twin of loan_env). Spells and expiries already running count from now."""
+        self.spells, self.off_t = {}, {cid: self.t for cid in self.off_since}
+        self.expired_t = {cid: self.t for cid in self.expired_at}
+
+    def case_loss_at(self, cid, t, g_at):
+        """Share of case cid accrued up to time t (>= the log_spells() time), up to a
+        constant per case; g_at(t) gives G at t (an exact sample: G moves between
+        events). Needs log_spells()."""
+        v = 0.0
+        for t_on, g_on, t_off, g_off in self.spells.get(cid, ()):
+            if t_on < t:
+                v += (g_off if t_off <= t else g_at(t)) - g_on
+        if cid in self.off_since and self.off_t[cid] < t:
+            v += g_at(t) - self.off_since[cid]
+        if cid in self.expired_t and self.expired_t[cid] < t:
+            v += g_at(t) - self.expired_at[cid]
+        return v
 
     def case_loss(self, cid):
         """Loss share of case cid so far (since the start; differences are what matter),

@@ -855,6 +855,41 @@ do-nothing (entropy −0.83 → −0.15, explained variance ≈ 0, value loss 26
 
   Best baseline per scenario ≈ 0.50.
 
+#### Common random numbers and the do-nothing twin
+- **Problem:** without Q_ref every case's normal lateness enters its reward (per-case
+  reward ~ −21 against action effects ~1), and with one random stream two runs of the
+  same seed diverge after the first action, so paired comparisons kept the full spread
+  of normal operation (±0.17 Q-days per episode, about Loss_base).
+- **Random streams:** separate streams for arrivals, attendance, the escalation team,
+  and per case (per stage visit for routing/waits and for work durations; one for its
+  action outcomes). Validation unchanged (9/9, KS 0.059); run time unchanged after
+  creating per-case streams lazily and sampling choices by inverse CDF.
+- **Do-nothing twin** (`loan_env`, `twin=True`): every episode is replayed with every
+  decision do_nothing; both reward parts and the objective count the difference.
+  Check: an all-do-nothing agent equals its twin exactly (Loss terms ~1e-14, objective
+  1.000000; the baselines' inline do_nothing gives the same episode).
+- **Own benefit per treated case** (β = 0, treat 10/25/50% at random): D1 substitute
+  1.72 / 1.42 / 1.20 (κ 0.20), D3 retry 1.18 / 1.00 / 1.03 (κ 0.05), D2 substitute
+  ~0.14 ± 0.21 (κ 0.20). Untreated D3 cases: 0.004 ± 0.14. Before: D3 retry 0.01–0.04.
+- **Recalibration** (paired with the undisrupted twin): Loss_base D1 0.178, D2 0.152,
+  D3 0.110 Q-days; spread of the extra Loss 0.105 / 0.091 / 0.045 (was 0.14 / 0.22 / 0.16).
+- **Baselines** (paired objective 1 + (Loss − Loss_do-nothing)/Loss_base + cost; D1–D3 ×
+  16 seeds, seeds 200+); intervals 3–6× tighter than before:
+
+  | Policy | Objective | vs do-nothing | D1 | D2 | D3 |
+  |---|---|---|---|---|---|
+  | do-nothing | 1.000 | — | 1.00 | 1.00 | 1.00 |
+  | always retry | 0.758 | −0.24 ± 0.11 | 1.00 | 1.00 | 0.27 |
+  | always reassign | 0.923 | −0.08 ± 0.05 | 1.00 | 1.00 | 0.77 |
+  | always substitute | 0.772 | −0.23 ± 0.14 | 0.24 | 1.08 | 1.00 |
+  | always escalate | 0.872 | −0.13 ± 0.05 | 0.92 | 0.98 | 0.72 |
+  | greedy | 0.785 | −0.22 ± 0.07 | 0.57 | 0.99 | 0.79 |
+  | **rule** | **0.371** | **−0.63 ± 0.17** | 0.26 | 0.97 | −0.11 |
+
+  Below 0 (rule in D3): the episode ends with less lateness than without the
+  disruption, since the actions also spare cases the documents loop they would have
+  gone through anyway.
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);

@@ -23,7 +23,8 @@ Setup (lessons from the proof of concept and the m60 runs):
 Environment variables:
   RIMS_TIME_STEPS (500000), RIMS_LEARNING_RATE (3e-4), RIMS_ENT_COEF (0.01),
   RIMS_W (1.0), RIMS_REWARD (case), RIMS_BETA (0.5), RIMS_WINDOW_H (0: the whole
-  horizon; windowed shared Loss, see loan_env), RIMS_GAE_LAMBDA (0.95),
+  horizon; windowed shared Loss, see loan_env), RIMS_TWIN (1: rewards and evaluation
+  against the do-nothing twin, see loan_env), RIMS_GAE_LAMBDA (0.95),
   RIMS_SEED (0), RIMS_N_ENVS (6), RIMS_RUN_TAG, RIMS_RESUME,
   RIMS_LOG_ROOT (tmp_loan_training)
 
@@ -53,8 +54,9 @@ EVAL_EVERY = 5          # updates between evaluation rounds
 EVAL_PER_CELL = 8      # 4 cells -> 32 evaluation episodes; 3 per cell picked lucky checkpoints
 
 
-def make_env(cycle, w, start=0, monitor=True, reward='case', beta=0.5, window_h=None):
-    env = LoanEnv(MODEL, DISRUPTIONS, CALIBRATION, cycle, w=w, reward=reward, beta=beta, window_h=window_h)
+def make_env(cycle, w, start=0, monitor=True, reward='case', beta=0.5, window_h=None, twin=True):
+    env = LoanEnv(MODEL, DISRUPTIONS, CALIBRATION, cycle, w=w, reward=reward, beta=beta, window_h=window_h,
+                  twin=twin)
     env.shock_cycle_index = start
     return Monitor(env) if monitor else env
 
@@ -67,24 +69,26 @@ def main():
     reward = os.environ.get('RIMS_REWARD', 'case')
     beta = float(os.environ.get('RIMS_BETA', 0.5))
     window_h = float(os.environ.get('RIMS_WINDOW_H', 0)) or None
+    twin = os.environ.get('RIMS_TWIN', '1') == '1'
     gae_lambda = float(os.environ.get('RIMS_GAE_LAMBDA', 0.95))
     seed = int(os.environ.get('RIMS_SEED', 0))
     n_envs = int(os.environ.get('RIMS_N_ENVS', 6))
     resume = os.environ.get('RIMS_RESUME', '0') == '1'
     cycle = [tuple(c) for c in json.load(open(DISRUPTIONS))['training_cycle']['cells']]
 
-    run_name = f'loan_ppo_w{w:g}_s{seed}' + (f'_case_b{beta:g}' + (f'_win{window_h:g}h' if window_h and beta else '') if reward == 'case' else '')
+    run_name = f'loan_ppo_w{w:g}_s{seed}' + (f'_case_b{beta:g}' + (f'_win{window_h:g}h' if window_h and beta else '') + ('' if twin else '_notwin')
+                                             if reward == 'case' else '')
     if os.environ.get('RIMS_RUN_TAG'):
         run_name += f"_{os.environ['RIMS_RUN_TAG']}"
     log_dir = os.path.join(os.environ.get('RIMS_LOG_ROOT', 'tmp_loan_training'), run_name)
     os.makedirs(log_dir, exist_ok=True)
-    print(f'run {run_name}: {time_steps} steps, reward {reward} (beta {beta}, window {window_h or 'horizon'} h), lr {lr}, ent {ent_coef}, '
+    print(f'run {run_name}: {time_steps} steps, reward {reward} (beta {beta}, window {window_h or 'horizon'} h, twin {twin}), lr {lr}, ent {ent_coef}, '
           f'gae_lambda {gae_lambda}, w {w}, {n_envs} envs, '
           f'{len(cycle)} cells -> {log_dir}', flush=True)
 
     # spread the environments over the cycle
     venv = SubprocVecEnv([partial(make_env, cycle, w, i * len(cycle) // n_envs, reward=reward, beta=beta,
-                                  window_h=window_h)
+                                  window_h=window_h, twin=twin)
                           for i in range(n_envs)])
     venv.seed(seed)
     vn_path = os.path.join(log_dir, 'vecnormalize.pkl')
@@ -105,7 +109,7 @@ def main():
     model.set_logger(configure(log_dir, ['stdout', 'csv', 'tensorboard']))
 
     update_calls = N_STEPS          # callback calls per update (one call = n_envs steps)
-    eval_env = make_env(cycle, w, monitor=False, reward=reward, beta=beta, window_h=window_h)
+    eval_env = make_env(cycle, w, monitor=False, reward=reward, beta=beta, window_h=window_h, twin=twin)
     n_eval = EVAL_PER_CELL * len(cycle)
     eval_cb = EvalPolicyCallback(check_freq=EVAL_EVERY * update_calls, nr_evaluations=n_eval, log_dir=log_dir,
                                  eval_env=eval_env, resume=resume,
