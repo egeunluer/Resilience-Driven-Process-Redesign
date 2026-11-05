@@ -16,8 +16,8 @@ Policies (doc section 14), all `policy(sim, decision) -> action`:
 
 Benchmark: every policy on the same episodes (cell x seed, seeds 200+), the training
 cycle cells plus the robustness cells (length drawn). Reported per episode as the
-environment's objective  w * Loss / Loss_base[e] + sum(kappa) / N[e]  (= minus the
-episode return; Loss_base and N of the scenario, pooled over its cycle cells), with paired differences and 95% intervals.
+environment's objective  w * (Loss - Loss_normal[e]) / Loss_base[e] + sum(kappa) / N[e]
+(Loss_base, Loss_normal and N of the scenario, pooled over its cycle cells; see loan_env), with paired differences and 95% intervals.
 
   python3 baselines_loan.py                 # 8 seeds per cell
   python3 baselines_loan.py --seeds 16 --out bench.json
@@ -151,7 +151,7 @@ def norm_of(r, norm):
 
 def objective(r, norm, w=1.0):
     n = norm_of(r, norm)
-    return w * r['loss'] / n['loss_base'] + r['action_cost'] / n['n_decisions']
+    return w * (r['loss'] - n['loss_normal']) / n['loss_base'] + r['action_cost'] / n['n_decisions']
 
 
 _G = {}
@@ -208,7 +208,7 @@ def report(R, norm, policies, cells, title):
     keys = [scenario_key(*c) for c in cells]
     by = {(r['policy'], r['scenario'], r['seed']): r for r in R}
     seeds = sorted({r['seed'] for r in R})
-    print(f'\n== {title}: {len(keys)} cells x {len(seeds)} seeds; objective = Loss/Loss_base + cost/N '
+    print(f'\n== {title}: {len(keys)} cells x {len(seeds)} seeds; objective = (Loss - Loss_normal)/Loss_base + cost/N '
           '(do-nothing ~1 over the cycle, lower is better)')
     print(f"{'policy':18s} {'objective':>9s} {'vs do-nothing':>18s} {'Loss ratio':>10s} {'cost':>6s} {'decisions':>9s}")
     for p in policies:
@@ -216,7 +216,7 @@ def report(R, norm, policies, cells, title):
         ob = [objective(r, norm) for r in rs]
         dif = [objective(by[(p, k, s)], norm) - objective(by[('do_nothing', k, s)], norm) for k in keys for s in seeds]
         m, h = ci(dif)
-        lr = np.mean([r['loss'] / norm_of(r, norm)['loss_base'] for r in rs])
+        lr = np.mean([(r['loss'] - norm_of(r, norm)['loss_normal']) / norm_of(r, norm)['loss_base'] for r in rs])
         cost = np.mean([r['action_cost'] / norm_of(r, norm)['n_decisions'] for r in rs])
         print(f"{p:18s} {np.mean(ob):9.3f} {m:+9.3f} ± {h:6.3f} {lr:10.3f} {cost:6.3f} {np.mean([r['decisions'] for r in rs]):9.0f}")
     print('per cell (mean objective):')

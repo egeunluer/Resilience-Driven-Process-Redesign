@@ -103,7 +103,7 @@ def main():
               f"{np.mean([r['min_rolling_q'] for r in rs]):9.3f} {np.mean([r['time_to_recover_d'] for r in rs]):9.1f} "
               f"{np.mean([r['expiries'] for r in rs]):8.1f} {extra:10.0f} {np.mean([r['open_peak'] for r in rs]):9.0f} "
               f"{np.mean([r['late_total'] for r in rs]):9.0f}")
-    print(f"\ndaily mean Q after the onset (Q_ref {cal['q_ref']:.3f}), mean over seeds:")
+    print(f"\ndaily mean Q after the onset (normal mean {cal['q_mean']:.3f}), mean over seeds:")
     print('day   ' + ' '.join(f'{f:>6g}' for f in [1.0] + factors))
     n = min(len(r['q_daily']) for r in R)
     for d in list(range(0, 14)) + list(range(14, n, 4)):

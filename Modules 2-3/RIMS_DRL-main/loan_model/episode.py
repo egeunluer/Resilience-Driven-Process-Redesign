@@ -35,12 +35,12 @@ def do_nothing(sim, decision):
 
 class Episode:
     """Warm-up done and disruption scheduled on construction; the clock stands at the
-    onset. `cal` is the resilience calibration (q_ref, deadline_floor_s, deadlines_s).
+    onset. `cal` is the resilience calibration (q_mean, deadline_floor_s, deadlines_s).
     `duration_h` fixes the disruption length (None: drawn from the level)."""
 
     def __init__(self, sm, disruption_cfg, scenario, level, seed, cal, policy=None,
                  duration_h=None, warmup_days=WARMUP_DAYS, horizon_days=HORIZON_DAYS, record=False):
-        self.tr = QTracker(sm.m['deadlines'], sm.m['end_stages'], q_ref=cal['q_ref'],
+        self.tr = QTracker(sm.m['deadlines'], sm.m['end_stages'], recover_q=cal['q_mean'],
                            deadline_floor_s=cal['deadline_floor_s'])
         self.sim = sim = Simulator(sm, seed=seed, observers=[self.tr], record=record)
         sim.decision_policy = policy

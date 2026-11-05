@@ -2,16 +2,18 @@
 """
 Calibrate the resilience measure of the stage-model simulator.
 
-Phase 4 (this part): undisrupted runs give the normal behaviour of Q(t) -- its mean,
-day-to-day spread, and Q_ref, the normal-operation floor below which Loss counts
-(5th percentile of daily-mean Q) -- plus the Loss and delay-caused expiries that
-accumulate per day without any disruption.
-Phase 8 (--scenarios): the do-nothing Loss and number of decisions per episode for
-every cell (scenario, level, outage length) of the disruption config's training cycle
-and robustness cells, and their mean over each scenario's cycle cells -- Loss_base and
-N of the environment's reward.
+Phase 4 (this part): undisrupted runs give the normal behaviour of Q(t) -- its mean
+(the recovery level) and day-to-day spread -- plus the Loss (integral of 1 - Q) and
+delay-caused expiries that accumulate per day without any disruption.
+Phase 8 (--scenarios): per cell of the training cycle, every do-nothing episode is
+paired with its undisrupted twin (same seed, warm-up and onset; zero-length
+disruption). Loss_base = the mean extra Loss the disruption causes (do-nothing minus
+twin), Loss_normal = the twin's mean Loss, N = decisions per episode; pooled over each
+scenario's cycle cells. The environment's objective is
+(Loss - Loss_normal) / Loss_base + cost: without a threshold, normal operation accrues
+~0.1 Q-day per day, which would otherwise dwarf the disruption.
 
-  python3 calibrate_loan_resilience.py --pool-k 3               # Q_ref etc., seeds 0-15
+  python3 calibrate_loan_resilience.py --pool-k 3               # Q mean etc., seeds 0-15
   python3 calibrate_loan_resilience.py --pool-k 3 --scenarios   # Loss_base / N per cell
 """
 import argparse
@@ -46,12 +48,16 @@ def daily_q(sm, seed, days):
 def _do_nothing_job(args):
     model, cfg, cal, (scenario, level, duration_h), seed = args
     sm = StageModel(model, pool=cal['pool'])
-    return run_episode(sm, cfg, scenario, level, seed, cal, duration_h=duration_h)
+    r = run_episode(sm, cfg, scenario, level, seed, cal, duration_h=duration_h)
+    twin = run_episode(sm, cfg, scenario, level, seed, cal, duration_h=0)
+    r['loss_normal'] = twin['loss']
+    return r
 
 
 def calibrate_scenarios(model_path, disruptions_path, cal_path, seeds):
-    """Do-nothing Loss_base and N (decisions per episode) per cell, written into the
-    calibration file's loss_base_by_scenario."""
+    """Do-nothing extra Loss (Loss_base), the twin's Loss (Loss_normal) and N
+    (decisions per episode) per cell, written into the calibration file's
+    loss_base_by_scenario."""
     with open(model_path) as f:
         model = json.load(f)
     with open(disruptions_path) as f:
@@ -63,17 +69,22 @@ def calibrate_scenarios(model_path, disruptions_path, cal_path, seeds):
     with Pool(max(1, (os.cpu_count() or 2) - 1)) as pool:
         res = pool.map(_do_nothing_job, jobs, chunksize=1)
     out = {}
-    print(f"{'cell':32s} {'Loss_base (Q-days)':>18s} {'sd':>7s} {'N decisions':>11s} {'recover (d)':>11s}")
+    print(f"{'cell':32s} {'Loss_base (Q-d)':>15s} {'sd':>7s} {'Loss_normal':>11s} {'sd':>7s} {'N decisions':>11s} "
+          f"{'recover (d)':>11s}")
     for c in cells:
         key = scenario_key(*c)
         rs = [r for r in res if r['scenario'] == key]
-        loss = np.array([r['loss'] for r in rs])
+        extra = np.array([r['loss'] - r['loss_normal'] for r in rs])
+        normal = np.array([r['loss_normal'] for r in rs])
         n = np.array([r['decisions'] for r in rs])
-        out[key] = {'loss_base': float(loss.mean()), 'loss_sd': float(loss.std(ddof=1)),
+        if extra.mean() <= 0:
+            raise RuntimeError(f'{key}: the disruption adds no Loss on average ({extra.mean():.0f} s)')
+        out[key] = {'loss_base': float(extra.mean()), 'loss_sd': float(extra.std(ddof=1)),
+                    'loss_normal': float(normal.mean()), 'loss_normal_sd': float(normal.std(ddof=1)),
                     'n_decisions': float(n.mean()), 'n_seeds': len(rs),
                     'time_to_recover_d': float(np.mean([r['time_to_recover_d'] for r in rs]))}
-        print(f"{key:32s} {loss.mean() / 86400:18.4f} {loss.std(ddof=1) / 86400:7.4f} {n.mean():11.0f} "
-              f"{out[key]['time_to_recover_d']:11.1f}")
+        print(f"{key:32s} {extra.mean() / 86400:15.4f} {extra.std(ddof=1) / 86400:7.4f} {normal.mean() / 86400:11.4f} "
+              f"{normal.std(ddof=1) / 86400:7.4f} {n.mean():11.0f} {out[key]['time_to_recover_d']:11.1f}")
     # per scenario: pooled over its cycle cells. The environment normalises by these:
     # short outages do almost no harm (Loss at the level of the normal day-to-day
     # noise), so dividing by a cell's own Loss_base would blow that noise up.
@@ -81,11 +92,15 @@ def calibrate_scenarios(model_path, disruptions_path, cal_path, seeds):
         ks = [scenario_key(*c) for c in cfg['training_cycle']['cells'] if (c[0], c[1]) == (sc, lv)]
         key = cycle_key(sc, lv)
         out[key] = {'loss_base': float(np.mean([out[k]['loss_base'] for k in ks])),
+                    'loss_normal': float(np.mean([out[k]['loss_normal'] for k in ks])),
                     'n_decisions': float(np.mean([out[k]['n_decisions'] for k in ks])), 'cells': ks}
-        print(f"{key:32s} {out[key]['loss_base'] / 86400:18.4f} {'':7s} {out[key]['n_decisions']:11.0f}   (cycle mean)")
+        print(f"{key:32s} {out[key]['loss_base'] / 86400:15.4f} {'':7s} {out[key]['loss_normal'] / 86400:11.4f} "
+              f"{'':7s} {out[key]['n_decisions']:11.0f}   (cycle mean)")
     cal['loss_base_by_scenario'] = out
-    cal['loss_base_definition'] = ('mean do-nothing Loss (seconds, Q_ref-normalised) and decisions per episode '
-                                   f'per cell, seeds {seeds[0]}-{seeds[-1]}, warm-up/horizon of loan_model.episode')
+    cal['loss_base_definition'] = ('Loss = integral of (1 - Q) dt in seconds; loss_base: mean extra Loss of the '
+                                   'do-nothing episode over its undisrupted twin (same seed, zero-length '
+                                   'disruption); loss_normal: the twin\'s mean Loss; n_decisions per episode; '
+                                   f'seeds {seeds[0]}-{seeds[-1]}, warm-up/horizon of loan_model.episode')
     with open(cal_path, 'w') as f:
         json.dump(cal, f, indent=1)
     print(f'-> {cal_path}')
@@ -116,11 +131,9 @@ def main():
         daily += q
         exp += e
     daily = np.array(daily)
-    q_ref = float(np.percentile(daily, 5))
     n_days = len(daily)
-    # Loss per day that undisrupted operation accumulates below Q_ref (daily means
-    # under-state it slightly, since Q also moves within a day)
-    base_loss = float(np.mean(np.maximum(0.0, q_ref - daily) / q_ref)) * 86400
+    # Loss (integral of 1 - Q) per day of undisrupted operation
+    base_loss = float(np.mean(1.0 - daily)) * 86400
     cal = {
         'model': os.path.basename(args.model),
         'pool_k': args.pool_k, 'pool': sm.pool,
@@ -128,8 +141,7 @@ def main():
         'deadline_floor_s': DEADLINE_FLOOR_S,
         'deadlines_s': {k: max(v, DEADLINE_FLOOR_S) for k, v in sm.m['deadlines'].items()},
         'q_mean': float(daily.mean()), 'q_daily_sd': float(daily.std()),
-        'q_daily_p1': float(np.percentile(daily, 1)), 'q_ref': q_ref,
-        'q_ref_definition': '5th percentile of daily-mean Q(t) in undisrupted runs',
+        'q_daily_p1': float(np.percentile(daily, 1)),
         'baseline_loss_s_per_day': base_loss,
         'baseline_delay_expiries_per_day': exp / n_days,
         'loss_base_by_scenario': {},
@@ -140,7 +152,7 @@ def main():
     with open(out, 'w') as f:
         json.dump(cal, f, indent=1)
     print(f"{n_days} days ({len(args.seeds)} seeds): Q mean {cal['q_mean']:.4f}, daily sd {cal['q_daily_sd']:.4f}, "
-          f"Q_ref (p5) {q_ref:.4f}, p1 {cal['q_daily_p1']:.4f}; baseline Loss {base_loss:.0f} s/day, "
+          f"p1 {cal['q_daily_p1']:.4f}; baseline Loss {base_loss:.0f} s/day, "
           f"delay expiries {cal['baseline_delay_expiries_per_day']:.2f}/day -> {out}")
 
 

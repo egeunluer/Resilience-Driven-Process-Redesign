@@ -7,15 +7,19 @@ horizon. Every step answers one decision -- a case blocked by the disruption, ro
 into the documents loop during a surge, or an SLA-risk alert -- with a recovery action;
 the simulation then runs on until the next decision or the horizon.
 
-Reward between two decisions:
+Loss = integral of (1 - Q) dt, with no threshold: every off-track moment of every case
+counts (metrics.QTracker). Normal operation accrues Loss too (Q ~ 0.90), so the
+disruption is measured by what it adds: Loss_base[e] is the mean extra Loss of a
+do-nothing episode over its undisrupted twin, Loss_normal[e] the twin's mean Loss, N[e]
+the decisions per episode, averaged over the scenario's cells of the training cycle
+(calibrate_loan_resilience.py, Phase 8). Episode objective (evaluation, benchmark):
+    objective = w * (Loss - Loss_normal[e]) / Loss_base[e]  +  sum(kappa) / N[e]
+about 1 for do-nothing, 0 if the disruption did no harm at no cost.
+
+Global reward (reward='global', the first setup): between two decisions
     r = -( w * dLoss / Loss_base[e]  +  kappa[a] * c_p[e] ),  c_p = 1 / N[e]
 dLoss is the Loss accrued since the previous decision (the Loss after the last
-decision, up to the horizon, goes into the last step). Loss_base and N are the
-do-nothing Loss and decisions per episode of scenario e, averaged over its cells of
-the training cycle (calibrate_loan_resilience.py, Phase 8): over the cycle a
-do-nothing episode sums to -w on average, and acting on every case costs about kappa.
-Not per cell: short outages do almost no harm, and their own Loss_base is at the level
-of normal day-to-day noise, which a per-cell normalisation would blow up.
+decision, up to the horizon, goes into the last step).
 
 Per-case reward (reward='case'): the decisions of one case form their own chain, and
 each decision is charged its case's share of the Loss (metrics.QTracker.case_loss)
@@ -123,6 +127,7 @@ class LoanEnv(Env):
         self.ep, self.cell = ep, cell
         n = self.norm[self._key(cell)]
         self.loss_base = n['loss_base']
+        self.loss_normal = n['loss_normal']
         self.c_p = 1.0 / n['n_decisions']
         self._loss_mark = 0.0
         self.cost = 0.0
@@ -173,7 +178,7 @@ class LoanEnv(Env):
         info = {}
         if not pending:
             res = ep.result()
-            loss_ratio = res['loss'] / self.loss_base
+            loss_ratio = (res['loss'] - self.loss_normal) / self.loss_base
             self.last_episode_info = {
                 'objective': self.w * loss_ratio + self.cost,
                 'loss_ratio': loss_ratio, 'cost_ratio': self.cost,
@@ -234,7 +239,7 @@ class LoanEnv(Env):
     def _obs_names(self):
         return (['disruption_active', 'since_onset', 'since_end', 'working_hours', 'hour_of_day',
                  'esc_free', 'pending', 'blocked', 'blocked_slack_lt2d', 'blocked_slack_2_7d',
-                 'q_over_ref', 'rolling_q_over_ref', 'open_cases', 'arrivals_24h', 'queued']
+                 'q', 'rolling_q', 'open_cases', 'arrivals_24h', 'queued']
                 + [f'scenario_{s}' for s in self.scenarios]
                 + [f'cause_{c}' for c in self.causes] + ['alert']
                 + [f'stage_{s}' for s in self.stages]
@@ -266,8 +271,8 @@ class LoanEnv(Env):
             min(1.0, len(tr.hits) / 500),
             float((slacks < 2 * DAY).sum()) / n_blk if len(slacks) else 0.0,
             float(((slacks >= 2 * DAY) & (slacks < 7 * DAY)).sum()) / n_blk if len(slacks) else 0.0,
-            min(1.0, tr.q / tr.q_ref) * 2 - 1,
-            min(1.0, tr.rolling_q(now) / tr.q_ref) * 2 - 1,
+            (tr.q - 0.85) / 0.15,                       # Q in [0.7, 1] -> [-1, 1] (normal ~0.90)
+            (tr.rolling_q(now) - 0.85) / 0.15,
             min(1.0, tr.open / 4000),
             # demand: arrivals of the last 24 h against 3x a normal day; work waiting for a worker
             min(1.0, sum(n for _, n in sim.arrival_log) / (3 * self.normal_daily_arrivals)),

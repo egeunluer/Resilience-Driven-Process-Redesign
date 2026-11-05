@@ -6,23 +6,25 @@ most the deadline D_k of the stage it is in (D_k = p90 of case age at stage exit
 the log, floored at `deadline_floor_s`). Q(t) is piecewise constant: it changes when a
 case arrives, changes stage, ends, or its age crosses its stage deadline.
 
-Loss = integral of max(0, Q_ref - Q(t)) / Q_ref dt (recovery triangle), integrated
-exactly: deadline crossings are kept in a heap and processed lazily in time order
-whenever the tracker is advanced, so no simulation events are needed for them.
-Q_ref is the normal-operation floor (5th percentile of daily-mean Q in undisrupted
-runs, calibrate_loan_resilience.py), not the mean: below the mean, ordinary day-to-day
-noise alone would add Loss every day.
+Loss = integral of (1 - Q(t)) dt: every moment a case is off track counts, with no
+reference level or threshold (an earlier version only counted Q below Q_ref, the 5th
+percentile of normal days, which made about half of all deadline misses free). It is
+integrated exactly: deadline crossings are kept in a heap and processed lazily in time
+order whenever the tracker is advanced, so no simulation events are needed for them.
+Normal operation (Q ~ 0.90) also accrues Loss; what a disruption adds is measured
+against its undisrupted twin (calibrate_loan_resilience.py --scenarios).
 
-Recovery (recovered()): the disruption is over, every step it blocked has been carried
-out (the disruption layer calls clear_hit(); leaving the stage or ending also clears a
-hit), and the rolling mean of Q over the last 24 h is back at Q_ref or above.
+Recovery (recovered(), reported only, not part of the Loss or the reward): the
+disruption is over, every step it blocked has been carried out (the disruption layer
+calls clear_hit(); leaving the stage or ending also clears a hit), and the rolling mean
+of Q over the last 24 h is back at `recover_q` (the mean Q of undisrupted runs) or above.
 
 Per-case shares (case_loss(), for the per-case reward of loan_env): at every instant the
-Loss rate max(0, Q_ref - Q)/Q_ref is split equally among the cases that are off track,
-so the shares of all cases add up to the Loss exactly. A running integral G(t) of the
-rate per off-track case is kept; a case accrues dG while it is off track. A case that
-expires is charged dG from its expiry on (as if it stayed off track): otherwise its
-leaving the open set would make an expiry look free.
+Loss rate 1 - Q = off/open is split equally among the cases that are off track, so each
+off-track case accrues dt/open and the shares of all cases add up to the Loss exactly.
+A running integral G(t) of the rate per off-track case is kept; a case accrues dG while
+it is off track. A case that expires is charged dG from its expiry on (as if it stayed
+off track): otherwise its leaving the open set would make an expiry look free.
 
 Deadline mode 'age' (default, the agreed definition) measures case age against D_k;
 'sojourn' (time in the current stage against a stage-duration deadline) was compared
@@ -36,10 +38,10 @@ from collections import deque
 
 
 class QTracker:
-    def __init__(self, deadlines, end_stages, q_ref=None, deadline_floor_s=86400.0, mode='age'):
+    def __init__(self, deadlines, end_stages, recover_q=None, deadline_floor_s=86400.0, mode='age'):
         self.deadline = {s: max(float(d), deadline_floor_s) for s, d in deadlines.items()}
         self.end_stages = set(end_stages)
-        self.q_ref = q_ref
+        self.recover_q = recover_q    # recovery level (reporting only)
         # 'age': on track while case age <= D_k; 'sojourn': while time in the current
         # stage <= D_k (then D_k are stage-duration deadlines)
         self.mode = mode
@@ -48,7 +50,7 @@ class QTracker:
         self.off = 0
         self.case = {}           # id -> [arrival, stage, visit_token, off_track]
         self.heap = []           # (crossing time, id, visit_token)
-        self.loss = 0.0          # integral of max(0, Q_ref - Q)/Q_ref since reset_loss()
+        self.loss = 0.0          # integral of 1 - Q since reset_loss()
         self.q_area = 0.0        # integral of Q since reset_loss()
         self.area_t0 = 0.0
         self.expiries = 0        # expiries caused by a delay (timer won the race)
@@ -70,11 +72,9 @@ class QTracker:
         if dt > 0:
             q = self.q
             self.q_area += q * dt
-            if self.q_ref is not None and q < self.q_ref:
-                rate = (self.q_ref - q) / self.q_ref * dt
-                self.loss += rate
-                if self.off:
-                    self.g += rate / self.off
+            if self.off:
+                self.loss += (1.0 - q) * dt
+                self.g += dt / self.open
             self.t = t
 
     def _mark(self):
@@ -175,10 +175,10 @@ class QTracker:
     # -------------------------------------------------------------- readout
     def recovered(self, t, disruption_end):
         """Disruption over, every blocked step carried out, and the 24 h rolling mean
-        of Q back at Q_ref or above."""
+        of Q back at recover_q or above."""
         if t < disruption_end or self.hits:
             return False
-        return self.rolling_q(t) >= self.q_ref
+        return self.rolling_q(t) >= self.recover_q
     def reset_loss(self, t):
         """Start a fresh Loss / Q integral at t (e.g. at the disruption onset)."""
         self.advance(t)

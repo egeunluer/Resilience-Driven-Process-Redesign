@@ -45,12 +45,12 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 | Stage deadline `D_k` | p90 of case age when leaving stage k, floor 24 h: intake 1 d, complete 3.6 d, await_customer 32.8 d, validation 28.4 d, incomplete 35.5 d | imposed (from mined ages) | "on track" if age ≤ `D_k`; the floor only changes intake (7.8 min) |
 | Q(t) | share of open cases on track | imposed | leading indicator, reacts at once, uses all open cases |
 | Q_mean | 0.904 (daily sd 0.009) in undisrupted runs | imposed | calibrated, seeds 0–15 × 120 days |
-| Q_ref | 0.890 (full pool) / 0.886 (top-3 pool) = 5th percentile of daily-mean Q without disruption | imposed | Loss and recovery threshold; below the mean, normal noise would count as Loss |
+| Q_ref | removed | — | was the 5th percentile of daily-mean Q (0.886, top-3 pool) and the Loss threshold; it made about half of all deadline misses free (a case was charged only while Q < Q_ref, ~8% of the time in D1–D3), so the agent saw little own benefit from acting |
 | Resource pool | working default: top 3 workers per work item (16 workers, 36% utilised) | imposed | constrained pool; still passes validation (9/9) |
-| Loss | ∫ max(0, Q_ref − Q(t)) / Q_ref dt | literature | recovery triangle (corpus P43, P35); ~12 s/day without disruption |
+| Loss | ∫ (1 − Q(t)) dt, no threshold | literature | recovery triangle (corpus P43, P35); every off-track moment counts. Normal operation accrues ~0.099 Q-day per day (4.68 ± 0.17 Q-days per 50-day episode) |
 | Hard penalty | expiries caused by delay (timer wins the race) | imposed | baseline 1.4/day; customers who never respond are not penalised |
-| Loss_base[e] | do-nothing Loss per scenario | imposed | normalisation, like CPL_base |
-| Recovery | disruption over, all blocked steps done, 24 h rolling Q ≥ Q_ref | imposed | 3-day full work stop: recovery after 4.2 d. Misleading for D4: declared when the spike ends, weeks before its harm arrives |
+| Loss_base[e], Loss_normal[e] | Loss_base: mean extra Loss of a do-nothing episode over its undisrupted twin (same seed and onset, zero-length disruption): D1 0.173, D2 0.168, D3 0.172 Q-days (sd 0.14–0.22). Loss_normal: the twin's mean Loss, 4.68 Q-days | imposed (calibrated, seeds 0–15) | objective = (Loss − Loss_normal)/Loss_base + Σκ/N, do-nothing ≈ 1 |
+| Recovery | disruption over, all blocked steps done, 24 h rolling Q ≥ normal mean Q (0.901) | imposed | reported only, not part of the Loss or the reward |
 | Episode horizon | fixed 50 days after onset | imposed | late harm arrives by day ~40 (D2); recovery time reported separately |
 | Customer patience β | not implemented (deferred option) | assumed | P(cancel) = 1 − exp(−β · disruption delay); β = 0 is the current model |
 
@@ -63,7 +63,7 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 | D2 | telephony outage | blocks `W_Call after offers`, `W_Call incomplete files` | assumed | one outage per episode |
 | D3 | incomplete-documents surge `m` | level 2: m 0.5 (level 1: 0.25) | assumed | `p_inc × (1 + m)` capped at 0.95, base `p_inc` mined |
 | D3 | portal upload delay added to the incomplete loop | level 1: 24–96 h; level 2: 72–168 h | assumed | makes D3 harmful (without it Loss ≈ 0.006: base `p_inc` is already 0.69 on the first round) |
-| training cycle | one cell per scenario, D1–D4, length drawn | — | assumed | replaced the fixed-length cycle (8–240 h) |
+| training cycle | one cell per scenario, D1–D3, length drawn | — | assumed | replaced the fixed-length cycle (8–240 h). D4 left out: under the threshold-free Loss it adds 0.03 ± 0.21 Q-days per episode, no measurable harm |
 | D4 | demand spike: arrival rate × 3 (hours that start during the spike) | 3 | assumed | do-nothing sweep (`sweep_demand_spike.py`): the pool absorbs ×3 (almost no work item waits a working day); Loss 0.14 Q-days, arriving at days ~30–45 when the spike's cohort reaches its deadlines together; queues only blow up around ×8 |
 | D4 | decision trigger | spike-cohort case in `await_customer` / `incomplete`, on track, slack ≤ 48 h, once per stage visit, working hours | assumed | targets where the spike's harm is; ~250 decisions per episode |
 | D4 | reminder effect (substitute) | remaining customer waits of the stage visit × U[0.7, 0.9] | assumed | automated written reminder, no worker |
@@ -80,10 +80,11 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 | do-nothing | 0 | waits for natural resolution | — | |
 | retry | 0.05 | missing documents only: automatic re-fetch after 1 working h, finds them with p 0.4; at most 2 per case. Not offered in D1/D2 outages | assumed | ordering: literature (Russell 2006, Lerner 2010, P20). Masked in outages because a waiting case resumes the moment the service is restored, so retrying can only resume it later and at a cost |
 | reassign | 0.15 | D3: skips the portal delay, calls to the front of the queue | assumed | delays other cases (coupling) |
-| substitute | 0.30 | alternative channel; rework prob r_sub | assumed | D1: online-only send (channel mined) |
-| escalate | 0.50 | q_esc ≈ 0.95; handling 0.5–2 working h | assumed | manual workaround, slower than the logged session (0.3–2.7 min median) |
+| substitute | 0.20 | alternative channel; rework prob r_sub | assumed | D1: online-only send (channel mined) |
+| escalate | 0.30 | q_esc ≈ 0.95; handling 0.5–2 working h | assumed | manual workaround, slower than the logged session (0.3–2.7 min median) |
 | escalation backup team | 2 workers per escalated work item, ranked just outside the top-k pool | `W_Complete application`: User_10, User_61; `W_Call after offers`: User_24, User_28; `W_Call incomplete files`: User_29, User_28 | mined (who, qualification, attendance); assumed (that this role exists, size 2) | escalations only; masked when none on shift and free; size swept in sensitivity |
 | c_p (reference penalty) | 1 (relative) | — | literature | Metzger et al. 2020: relative costs, κ swept 0.1–0.5 |
-| Loss_base, N (reward normalisation) | per scenario, mean of do-nothing over its cycle cells | — | calibrated | not per cell: short outages' Loss is at noise level |
+| Loss_base, N (reward normalisation) | per scenario, over its cycle cells (see section 2) | — | calibrated | |
+| per-case reward | r_i = −[κ_a + (N/Loss_base)·((1−β)·ΔL_case,i + β·S_i)]; ΔL_case: the case's own Loss (dt/open for every off-track moment, and after an expiry) until its next decision; S_i: windowed share of the process Loss (the Loss at time s split equally among the decisions made before s, window = whole horizon) | — | imposed | β = 0.5. β = 0 slid to do-nothing (the benefit of D3 retry falls on other cases); the earlier β term (Loss until the next decision) gave the last decision all remaining Loss and collapsed training |
 | w (resilience vs cost weight) | 1 (default) | — | assumed | Pareto sweep |
 | expiry / deadline-miss penalty | TBD × c_p | — | assumed | residual penalty |

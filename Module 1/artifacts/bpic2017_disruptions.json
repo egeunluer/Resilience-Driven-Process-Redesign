@@ -144,8 +144,8 @@
       "do_nothing": 0.0,
       "retry": 0.05,
       "reassign": 0.15,
-      "substitute": 0.3,
-      "escalate": 0.5
+      "substitute": 0.2,
+      "escalate": 0.3
     },
     "allowed": {
       "offer_dispatch_outage": [
@@ -237,7 +237,7 @@
     }
   },
   "training_cycle": {
-    "_doc": "One cell per scenario, the length drawn per episode (72-120 h for every shock type). Short outages were removed: up to ~72 h they did about as much harm as normal day-to-day noise.",
+    "_doc": "One cell per scenario, the length drawn per episode (72-120 h for every shock type). Short outages were removed: up to ~72 h they did about as much harm as normal day-to-day noise. D4 (demand spike) is defined but left out of the cycle: under the threshold-free Loss it adds only 0.03 +- 0.21 Q-days per episode (D1-D3 ~0.17), i.e. no measurable harm.",
     "cells": [
       [
         "D1_offer_outage",
@@ -251,11 +251,6 @@
       ],
       [
         "D3_documents_surge",
-        "2",
-        null
-      ],
-      [
-        "D4_demand_spike",
         "2",
         null
       ]

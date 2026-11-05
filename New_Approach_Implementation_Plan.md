@@ -805,6 +805,56 @@ do-nothing (entropy −0.83 → −0.15, explained variance ≈ 0, value loss 26
   the main random stream, so paired episodes diverge after the first action (e.g. a
   Saturday with no worker on shift, P = 0.03, in one run and not the other).
 
+#### Run 3 (β = 0, 100k) and run 4 (windowed β = 0.5, 100k)
+- **Run 3** (`loan_ppo_w1_s0_case_b0_100k`), benchmark on seeds 200+ × 16: best 0.944
+  (92k), final 1.176 (do-nothing everywhere). Only D1 substitute learned; D3 retry
+  dropped from 35% to 7%.
+- **Diagnosis:** in D3 the cases with a decision carry only ~5% of the Loss; it comes at
+  days 25–45 on other cases (arrived before the onset or after the surge), so the
+  case-only reward cannot see retry's benefit. A 48 h window would hold none of it.
+- **Windowed shared term** (commit 7fa0caf): the Loss at time s is split equally among
+  the decisions made before s (window = whole horizon), weight β = 0.5. Shares sum to
+  the Loss exactly; the largest single share ~1× the mean (worst step ~3.4 vs ~1,096
+  with the old β term).
+- **Run 4** (`loan_ppo_w1_s0_case_b0.5_100k`): best 0.951 (61k), final 0.993; D1 kept,
+  D3 still do-nothing under the deterministic policy (retry 19% when sampled).
+- **Marginal-benefit check** (treat 10/25/50% at random): the treated case's own benefit
+  fell below κ between 10% and 25% in D1 (where the agent settled, ~20%) and was below κ
+  at every rate in D3, while the objective kept improving up to ~50%. Half of all
+  deadline misses cost the case nothing (charged only while Q < Q_ref, ~8% of the time).
+
+#### Threshold-free Loss, new κ, D4 out of the cycle
+- **Q_ref removed:** Loss = ∫ (1 − Q) dt; a case is charged dt/open for every off-track
+  moment. Recovery (reported only) uses the normal mean Q, 0.901.
+- **κ:** do_nothing 0, retry 0.05, reassign 0.15, substitute 0.20, escalate 0.30.
+- **Normalisation:** normal operation accrues 4.68 ± 0.17 Q-days per episode, so each
+  calibration episode is paired with its undisrupted twin (same seed and onset,
+  zero-length disruption). objective = (Loss − Loss_normal)/Loss_base + Σκ/N.
+
+  | Scenario | Loss_base = extra Loss (Q-days) | sd | N decisions |
+  |---|---|---|---|
+  | D1 offer outage | 0.173 | 0.138 | 649 |
+  | D2 telephony outage | 0.168 | 0.219 | 872 |
+  | D3 documents surge | 0.172 | 0.159 | 276 |
+  | D4 demand spike | 0.031 | 0.207 | 250 |
+
+- **D4 left out of the training cycle:** it adds no measurable Loss under this
+  definition (the spike's new cases are on track and lift Q at first), and dividing by
+  its tiny Loss_base made its objective pure noise.
+- **Baselines** (D1–D3 × 16 seeds, seeds 200+):
+
+  | Policy | Objective | vs do-nothing | D1 | D2 | D3 |
+  |---|---|---|---|---|---|
+  | do-nothing | 0.916 | — | 0.93 | 0.91 | 0.91 |
+  | always retry | 0.817 | −0.10 ± 0.14 | 0.93 | 0.91 | 0.61 |
+  | always reassign | 0.900 | −0.02 ± 0.15 | 0.93 | 0.91 | 0.86 |
+  | always substitute | 0.821 | −0.09 ± 0.26 | 0.48 | 1.08 | 0.91 |
+  | always escalate | 0.987 | +0.07 ± 0.29 | 1.21 | 0.96 | 0.80 |
+  | greedy | 0.827 | −0.09 ± 0.27 | 1.06 | 0.63 | 0.79 |
+  | **rule** | **0.595** | **−0.32 ± 0.29** | 0.43 | 0.93 | 0.43 |
+
+  Best baseline per scenario ≈ 0.50.
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);
