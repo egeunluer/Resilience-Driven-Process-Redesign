@@ -890,6 +890,41 @@ do-nothing (entropy −0.83 → −0.15, explained variance ≈ 0, value loss 26
   disruption, since the actions also spare cases the documents loop they would have
   gone through anyway.
 
+#### Runs with the twin (100k + 100k) and the escalation shadow price
+- **Run `loan_ppo_w1_s0_case_b0.5_twin_100k`** (benchmark seeds 200+ × 16, paired
+  objective): 0.394 at 61k, flat to 200k (0.394–0.398). Against the rule (7 d):
+  D1 tie, D2 −0.17 ± 0.08 (agent better), D3 +0.26 ± 0.12 (rule better), overall tie.
+- **Rule threshold sweep** (`rule_<days>d`): 1 d 0.359, 2 d 0.360, 4 d 0.370, 7 d 0.371,
+  10 d 0.413, 14 d 0.465, 21 d 0.572; best per scenario 0.355. The agent ties the
+  tuned rule as well.
+- **D3 diagnosis:** not reassign (for urgent cases reassign is worse than retry in
+  reward and policy). The agent escalates every case whenever a backup worker is
+  free, at any slack: escalate beats retry in each case's own reward (+0.35 even at
+  14+ days of slack), but the worker is then busy when an urgent case arrives.
+  "Escalate only if urgent, else retry" scores −0.09 against the agent's 0.18 (seeds 300+).
+- **Fix: shadow price of the backup workers**, measured from the process
+  (`measure_shadow_price.py`): extra Loss per escalation forgone with one backup
+  worker fewer, under the current agent. D1 0 (it hardly escalates), D2 0 (no
+  measurable cost), D3 1.19 per escalation. `loan_env` charges (1 − β) × price to
+  every escalation, reward only. With it, escalate − retry in D3: +2.90 at < 2 days
+  slack, ~0 at 2–14 days, −0.25 at 14+ days.
+
+- **Continuation from 200k with the price** (`…_twin_shadow`, to ~304k): D1/D2 slightly
+  better (0.386–0.391 overall), D3 unchanged (0.149). The near-deterministic policy
+  kept escalating whenever a backup worker was free; the new signal (≈0 at 2–14 days of
+  slack, −0.25 ± 0.34 beyond) was too weak to break the habit.
+- **Fresh run with the price** (`loan_ppo_w1_s0_case_b0.5_shadow_fresh_100k`): learned
+  an urgency line by itself. It escalates when a backup worker is free in 99% of
+  overdue cases, 88% at 2–4 days, 70% at 4–7, 21% at 7–14 and 0% beyond 14 days, so
+  the backup workers are free ~45–50% of the time (was 14–16%). Benchmark: 0.436 (31k)
+  → 0.327 → 0.318 → **0.303** (final; D1 0.226, D2 0.792, D3 −0.108). Against the
+  rule (7 d): **−0.067 ± 0.051** (D1 −0.03 ± 0.04, D2 −0.17 ± 0.10, D3 +0.00 ± 0.10).
+  Against the best-tuned rule (1 d): **−0.055 ± 0.048**. First agent to beat the rule
+  significantly; still improving at 100k.
+- **Shadow price re-measured** under the fresh agent: D1 0, D2 1.34 (0.35–2.64),
+  D3 3.54 (1.29–5.85). It is about 3× higher in D3, since escalations now go to cases
+  that need them. Stored for the final runs.
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);

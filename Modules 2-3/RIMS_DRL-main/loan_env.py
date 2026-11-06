@@ -30,6 +30,16 @@ alone) cancels case by case; what is left is what the actions changed. The twin 
 not depend on the agent's actions, so subtracting it does not change the best policy.
 Each episode is simulated twice.
 
+Shadow price of the backup workers (shadow=True, per-case reward): the per-case reward
+cannot see that an escalation keeps a scarce backup worker from the next case. Every
+escalation is charged (1 - beta) * price[cause], the value of one escalation's worker
+time to the rest of the process, measured from the process under the current policy
+(measure_shadow_price.py; calibration 'escalation_shadow_price'). The same for every
+escalation of a team -- it never looks at the case's own urgency -- so the agent still
+has to learn when an escalation is worth it. (1 - beta): the case's own benefit enters
+the reward at that weight, so both sides of the comparison are in the same units.
+Reward only: the objective holds the real cost already, in the Loss.
+
 Global reward (reward='global', the first setup): between two decisions
     r = -( w * dLoss / Loss_base[e]  +  kappa[a] * c_p[e] ),  c_p = 1 / N[e]
 dLoss is the Loss accrued since the previous decision (the Loss after the last
@@ -77,7 +87,7 @@ class LoanEnv(Env):
     metadata = {'render_modes': []}
 
     def __init__(self, stage_model, disruptions, calibration, cycle, w=1.0, norm=None,
-                 reward='global', beta=0.0, window_h=None, twin=True, warmup_days=WARMUP_DAYS,
+                 reward='global', beta=0.0, window_h=None, twin=True, shadow=True, warmup_days=WARMUP_DAYS,
                  horizon_days=HORIZON_DAYS):
         """stage_model / disruptions / calibration: paths or dicts. The calibration's
         "pool" (constrained worker pool) is applied to the stage model. `norm` maps
@@ -96,6 +106,7 @@ class LoanEnv(Env):
         self.reward, self.beta = reward, beta
         self.window_s = window_h * 3600 if window_h else None
         self.twin = twin and reward == 'case'
+        self.shadow = (self.cal.get('escalation_shadow_price', {}) if shadow and reward == 'case' else {})
         self.norm = norm if norm is not None else self.cal.get('loss_base_by_scenario', {})
         missing = [self._key(c) for c in self.cycle if self._key(c) not in self.norm]
         if missing:
@@ -191,6 +202,8 @@ class LoanEnv(Env):
         self._loss_mark = ep.tr.loss
         wg = 0.0 if self.reward == 'case' else 1.0      # case: the Loss parts come in case_trace
         r = -self.scale * (self.w * wg * d_loss / self.loss_base + self.kappa[name] * self.c_p)
+        if name == 'escalate' and self.shadow:
+            r -= self.w * (1 - self.beta) * self.shadow.get(d.cause or d.failure_type, 0.0)
         info = {}
         if not pending:
             res = ep.result()

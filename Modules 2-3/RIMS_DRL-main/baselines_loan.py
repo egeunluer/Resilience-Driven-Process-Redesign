@@ -141,6 +141,8 @@ def make_policy(name, cfg, cal, sm):
         return Fixed('do_nothing', cfg, cal, sm)
     if name.startswith('always_'):
         return Fixed(name[len('always_'):], cfg, cal, sm)
+    if name.startswith('rule_') and name.endswith('d'):         # rule_<urgent days>d, e.g. rule_4d
+        return Rule(cfg, cal, sm, urgent_days=float(name[len('rule_'):-1]))
     return {'greedy': Greedy, 'rule': Rule}[name](cfg, cal, sm)
 
 
