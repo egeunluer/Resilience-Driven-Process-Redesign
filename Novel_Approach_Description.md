@@ -247,12 +247,14 @@ process. It is measured from the process, under the current policy:
 - run the same episodes with 2 and with 1 backup worker per step;
 - divide the extra Loss by the escalations forgone.
 
-Results, measured under the agent trained with the first prices (the first
-measurement, under an agent trained without them, gave D1 0, D2 0, D3 1.19): D1 0,
-D2 1.34, D3 3.54 per escalation. Every escalation of a team is charged (1−β) × its price. The charge never
+Results, measured under an agent trained without a price: D1 0 (it hardly
+escalates), D2 0 (no measurable cost), D3 1.19 per escalation. These values are kept
+fixed. A re-measurement under the agent trained with them gave D2 1.34 and D3 3.54:
+once escalations go to urgent cases, each one is worth more. It is reported as a
+check, not used. Every escalation of a team is charged (1−β) × its price. The charge never
 looks at the case's own urgency, so the agent still has to learn when an escalation
 is worth it. It is part of the reward only; the objective holds the real cost in the
-Loss. Because it depends on the policy, it is re-measured after training with it.
+Loss. It depends on the policy that uses the workers (see the re-measurement above).
 
 ### 5.5 Episode objective (evaluation and benchmark)
   objective = 1 + (Loss − Loss_do-nothing) / Loss_base,e + Σκ / N_e

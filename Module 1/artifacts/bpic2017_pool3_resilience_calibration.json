@@ -108,8 +108,8 @@
  "loss_base_definition": "Loss = integral of (1 - Q) dt in seconds; loss_base: mean extra Loss of the do-nothing episode over its undisrupted twin (same seed, zero-length disruption); loss_normal: the twin's mean Loss; n_decisions per episode; seeds 0-15, warm-up/horizon of loan_model.episode",
  "escalation_shadow_price": {
   "offer_dispatch_outage": 0.0,
-  "telephony_outage": 1.3391804757688794,
-  "documents_missing": 3.536497663877544
+  "telephony_outage": 0.0,
+  "documents_missing": 1.1928473786206089
  },
- "escalation_shadow_price_definition": "per escalation, per-decision reward units: extra Loss of the process per escalation forgone when the backup team shrinks from 2 to 1 workers per step, under model_final.zip (tmp_loan_training/loan_ppo_w1_s0_case_b0.5_shadow_fresh_100k/model_final.zip), seeds 300-315; negative estimates set to 0"
+ "escalation_shadow_price_definition": "per escalation, per-decision reward units: extra Loss of the process per escalation forgone when the backup team shrinks from 2 to 1 workers per step, under model_final.zip (tmp_loan_training/loan_ppo_w1_s0_case_b0.5_twin_100k/model_final.zip, the 200k agent trained without a price), seeds 300-315; negative estimates set to 0. Kept fixed: a re-measurement under the agent trained with these prices gave D2 1.34, D3 3.54 (reported as a check, not used)."
 }

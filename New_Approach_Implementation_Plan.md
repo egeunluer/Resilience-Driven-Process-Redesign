@@ -923,7 +923,9 @@ do-nothing (entropy −0.83 → −0.15, explained variance ≈ 0, value loss 26
   significantly; still improving at 100k.
 - **Shadow price re-measured** under the fresh agent: D1 0, D2 1.34 (0.35–2.64),
   D3 3.54 (1.29–5.85). It is about 3× higher in D3, since escalations now go to cases
-  that need them. Stored for the final runs.
+  that need them. **Decision: keep the first prices (D1 0, D2 0, D3 1.19)**, since the
+  agent trained with them already beats the rule; the re-measurement is reported as a
+  check.
 
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
