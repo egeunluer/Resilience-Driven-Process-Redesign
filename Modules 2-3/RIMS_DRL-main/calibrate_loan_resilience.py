@@ -55,7 +55,7 @@ def _do_nothing_job(args):
     return r
 
 
-def calibrate_scenarios(model_path, disruptions_path, cal_path, seeds):
+def calibrate_scenarios(model_path, disruptions_path, cal_path, seeds, common_base=False):
     """Do-nothing extra Loss (Loss_base), the twin's Loss (Loss_normal) and N
     (decisions per episode) per cell, written into the calibration file's
     loss_base_by_scenario."""
@@ -97,11 +97,25 @@ def calibrate_scenarios(model_path, disruptions_path, cal_path, seeds):
                     'n_decisions': float(np.mean([out[k]['n_decisions'] for k in ks])), 'cells': ks}
         print(f"{key:32s} {out[key]['loss_base'] / 86400:15.4f} {'':7s} {out[key]['loss_normal'] / 86400:11.4f} "
               f"{'':7s} {out[key]['n_decisions']:11.0f}   (cycle mean)")
+    if common_base:
+        # one Loss_base for every scenario of the cycle: the mean of their own. For a log
+        # where some shocks do little harm (BPI 2012: D1, D3), dividing by their own tiny
+        # Loss_base would blow up their noise and the side benefits of actions on the
+        # normal process; with a common base each shock counts by its real harm.
+        keys = [cycle_key(sc, lv) for (sc, lv) in dict.fromkeys((c[0], c[1]) for c in cfg['training_cycle']['cells'])]
+        common = float(np.mean([out[k]['loss_base'] for k in keys]))
+        for k in keys:
+            out[k]['loss_base_own'] = out[k]['loss_base']
+            out[k]['loss_base'] = common
+        print(f'common Loss_base for {len(keys)} scenarios: {common / 86400:.4f} Q-days (their own in loss_base_own)')
     cal['loss_base_by_scenario'] = out
+    cal['loss_base_common'] = common_base
     cal['loss_base_definition'] = ('Loss = integral of (1 - Q) dt in seconds; loss_base: mean extra Loss of the '
                                    'do-nothing episode over its undisrupted twin (same seed, zero-length '
                                    'disruption); loss_normal: the twin\'s mean Loss; n_decisions per episode; '
-                                   f'seeds {seeds[0]}-{seeds[-1]}, warm-up/horizon of loan_model.episode')
+                                   f'seeds {seeds[0]}-{seeds[-1]}, warm-up/horizon of loan_model.episode'
+                                   + ('; common: every cycle scenario gets the mean of their own Loss_base '
+                                      '(own value in loss_base_own)' if common_base else ''))
     with open(cal_path, 'w') as f:
         json.dump(cal, f, indent=1)
     print(f'-> {cal_path}')
@@ -115,6 +129,8 @@ def main():
     ap.add_argument('--days', type=int, default=120, help='measured days per seed, after the warm-up')
     ap.add_argument('--pool-k', type=int, help='constrained pool: k most active workers per work item')
     ap.add_argument('--scenarios', action='store_true', help='Phase 8: do-nothing Loss_base / N per cell')
+    ap.add_argument('--common-base', action='store_true',
+                    help='--scenarios: one Loss_base for all cycle scenarios (their mean; used for BPI 2012)')
     ap.add_argument('--disruptions', default=paths()[1])
     args = ap.parse_args()
     sm = StageModel(args.model)
@@ -124,7 +140,7 @@ def main():
         tag = f'_pool{args.pool_k}'
     out = args.out or os.path.join(os.path.dirname(args.model), f"{sm.m['meta']['log']}{tag}_resilience_calibration.json")
     if args.scenarios:
-        calibrate_scenarios(args.model, args.disruptions, out, args.seeds)
+        calibrate_scenarios(args.model, args.disruptions, out, args.seeds, common_base=args.common_base)
         return
     daily, exp = [], 0
     for s in args.seeds:

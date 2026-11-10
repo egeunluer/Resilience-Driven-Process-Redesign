@@ -1,0 +1,113 @@
+{
+ "model": "bpi2012_stage_model.json",
+ "pool_k": 3,
+ "pool": [
+  "10138",
+  "10188",
+  "10609",
+  "10809",
+  "10861",
+  "10910",
+  "10913",
+  "10972",
+  "10982",
+  "11049",
+  "11119",
+  "11169",
+  "11180",
+  "11181",
+  "11201",
+  "11304"
+ ],
+ "seeds": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15
+ ],
+ "warmup_days": 45,
+ "measured_days_per_seed": 120,
+ "deadline_floor_s": 86400.0,
+ "deadlines_s": {
+  "intake": 86400.0,
+  "complete": 465082.3,
+  "await_customer": 2678420.6,
+  "validation": 2462666.4,
+  "incomplete": 2822722.4
+ },
+ "q_mean": 0.8193666990073324,
+ "q_daily_sd": 0.014188402717881108,
+ "q_daily_p1": 0.7877016656405585,
+ "baseline_loss_s_per_day": 15606.717205766481,
+ "baseline_delay_expiries_per_day": 1.2442708333333334,
+ "loss_base_by_scenario": {
+  "D1_offer_outage:2": {
+   "loss_base": 1080.7080215272981,
+   "loss_sd": 2177.403401092116,
+   "loss_normal": 759417.8816091686,
+   "loss_normal_sd": 33952.90808312906,
+   "n_decisions": 169.34375,
+   "n_seeds": 64,
+   "time_to_recover_d": 4.386067708333334
+  },
+  "D2_telephony_outage:2": {
+   "loss_base": 6770.825078297563,
+   "loss_sd": 4628.771470758538,
+   "loss_normal": 759417.8816091686,
+   "loss_normal_sd": 33952.90808312906,
+   "n_decisions": 410.0625,
+   "n_seeds": 64,
+   "time_to_recover_d": 4.001302083333333
+  },
+  "D3_documents_surge:2": {
+   "loss_base": 922.8708023842282,
+   "loss_sd": 3357.9193363520767,
+   "loss_normal": 759417.8816091686,
+   "loss_normal_sd": 33952.90808312906,
+   "n_decisions": 66.0,
+   "n_seeds": 64,
+   "time_to_recover_d": 4.099609375
+  },
+  "D1_offer_outage:2:cycle": {
+   "loss_base": 2924.801300736363,
+   "loss_normal": 759417.8816091686,
+   "n_decisions": 169.34375,
+   "cells": [
+    "D1_offer_outage:2"
+   ],
+   "loss_base_own": 1080.7080215272981
+  },
+  "D2_telephony_outage:2:cycle": {
+   "loss_base": 2924.801300736363,
+   "loss_normal": 759417.8816091686,
+   "n_decisions": 410.0625,
+   "cells": [
+    "D2_telephony_outage:2"
+   ],
+   "loss_base_own": 6770.825078297563
+  },
+  "D3_documents_surge:2:cycle": {
+   "loss_base": 2924.801300736363,
+   "loss_normal": 759417.8816091686,
+   "n_decisions": 66.0,
+   "cells": [
+    "D3_documents_surge:2"
+   ],
+   "loss_base_own": 922.8708023842282
+  }
+ },
+ "loss_base_definition": "Loss = integral of (1 - Q) dt in seconds; loss_base: mean extra Loss of the do-nothing episode over its undisrupted twin (same seed, zero-length disruption); loss_normal: the twin's mean Loss; n_decisions per episode; seeds 0-63, warm-up/horizon of loan_model.episode; common: every cycle scenario gets the mean of their own Loss_base (own value in loss_base_own)",
+ "loss_base_common": true
+}
