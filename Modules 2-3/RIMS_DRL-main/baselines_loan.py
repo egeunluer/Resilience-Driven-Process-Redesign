@@ -35,9 +35,9 @@ import numpy as np
 
 from loan_model.disruptions import cycle_key, sample_hours, scenario_key
 from loan_model.episode import run_episode
+from loan_model.logs import paths
 from loan_model.simulator import StageModel
 
-ART = '../../Module 1/artifacts/'
 H = 3600.0
 DAY = 86400.0
 
@@ -237,9 +237,10 @@ def report(R, norm, policies, cells, title):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--model', default=ART + 'bpic2017_stage_model.json')
-    ap.add_argument('--disruptions', default=ART + 'bpic2017_disruptions.json')
-    ap.add_argument('--calibration', default=ART + 'bpic2017_pool3_resilience_calibration.json')
+    model, disruptions, calibration = paths()        # RIMS_LOG, default bpic2017
+    ap.add_argument('--model', default=model)
+    ap.add_argument('--disruptions', default=disruptions)
+    ap.add_argument('--calibration', default=calibration)
     ap.add_argument('--seeds', type=int, default=8, help='seeds per cell, from --seed0')
     ap.add_argument('--seed0', type=int, default=200)
     ap.add_argument('--policies', nargs='+', default=POLICIES)

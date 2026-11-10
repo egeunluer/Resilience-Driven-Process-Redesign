@@ -25,6 +25,7 @@ import numpy as np
 
 from loan_model.disruptions import cycle_key, scenario_key
 from loan_model.episode import run_episode
+from loan_model.logs import paths
 from loan_model.metrics import QTracker
 from loan_model.simulator import Simulator, StageModel, top_k_pool
 
@@ -108,13 +109,13 @@ def calibrate_scenarios(model_path, disruptions_path, cal_path, seeds):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--model', default='../../Module 1/artifacts/bpic2017_stage_model.json')
+    ap.add_argument('--model', default=paths()[0], help='default: the stage model of RIMS_LOG (bpic2017)')
     ap.add_argument('--out', default=None, help='default: <log>_resilience_calibration.json next to the model')
     ap.add_argument('--seeds', type=int, nargs='+', default=list(range(16)))
     ap.add_argument('--days', type=int, default=120, help='measured days per seed, after the warm-up')
     ap.add_argument('--pool-k', type=int, help='constrained pool: k most active workers per work item')
     ap.add_argument('--scenarios', action='store_true', help='Phase 8: do-nothing Loss_base / N per cell')
-    ap.add_argument('--disruptions', default='../../Module 1/artifacts/bpic2017_disruptions.json')
+    ap.add_argument('--disruptions', default=paths()[1])
     args = ap.parse_args()
     sm = StageModel(args.model)
     tag = ''

@@ -31,9 +31,9 @@ from multiprocessing import Pool
 
 import numpy as np
 
-ART = '../../Module 1/artifacts/'
-PATHS = (ART + 'bpic2017_stage_model.json', ART + 'bpic2017_disruptions.json',
-         ART + 'bpic2017_pool3_resilience_calibration.json')
+from loan_model.logs import paths
+
+PATHS = paths()             # RIMS_LOG, default bpic2017
 _G = {}
 
 

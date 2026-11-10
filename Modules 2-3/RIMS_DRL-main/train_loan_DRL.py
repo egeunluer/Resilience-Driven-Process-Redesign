@@ -27,7 +27,8 @@ Environment variables:
   against the do-nothing twin, see loan_env), RIMS_SHADOW (1: escalations pay the
   backup workers' shadow price, see loan_env), RIMS_GAE_LAMBDA (0.95),
   RIMS_SEED (0), RIMS_N_ENVS (6), RIMS_RUN_TAG, RIMS_RESUME,
-  RIMS_LOG_ROOT (tmp_loan_training)
+  RIMS_LOG_ROOT (tmp_loan_training), RIMS_LOG (bpic2017 or bpi2012: the event log,
+  loan_model/logs.py; runs of other logs than bpic2017 get the log as name prefix)
 
   python3 train_loan_DRL.py
   tensorboard --logdir tmp_loan_training
@@ -44,12 +45,11 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
 from callbacks import EvalPolicyCallback, LatestCheckpointCallback, ResilienceCallback
 from loan_env import LoanEnv
+from loan_model.logs import current_log, paths
 from loan_ppo import CaseMaskablePPO
 
-ART = '../../Module 1/artifacts/'
-MODEL = ART + 'bpic2017_stage_model.json'
-DISRUPTIONS = ART + 'bpic2017_disruptions.json'
-CALIBRATION = ART + 'bpic2017_pool3_resilience_calibration.json'
+LOG = current_log()            # RIMS_LOG, default bpic2017
+MODEL, DISRUPTIONS, CALIBRATION = paths(LOG)
 N_STEPS = 1024          # per environment and update
 EVAL_EVERY = 5          # updates between evaluation rounds
 EVAL_PER_CELL = 8      # 4 cells -> 32 evaluation episodes; 3 per cell picked lucky checkpoints
@@ -80,6 +80,8 @@ def main():
 
     run_name = f'loan_ppo_w{w:g}_s{seed}' + (f'_case_b{beta:g}' + (f'_win{window_h:g}h' if window_h and beta else '') + ('' if twin else '_notwin')
                                              if reward == 'case' else '')
+    if LOG != 'bpic2017':
+        run_name = f'{LOG}_{run_name}'
     if os.environ.get('RIMS_RUN_TAG'):
         run_name += f"_{os.environ['RIMS_RUN_TAG']}"
     log_dir = os.path.join(os.environ.get('RIMS_LOG_ROOT', 'tmp_loan_training'), run_name)
