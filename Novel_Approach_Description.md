@@ -94,6 +94,12 @@ Compared with the real log (3 seeds × 240 days), the simulator passes all 9 che
 - open cases (median 1,908 vs 1,937);
 - arrivals per day (85.3 vs 86.2).
 
+**Second log, BPI 2012** (same bank, three years earlier; mined with the same code):
+the same validation passes 8 of 9 checks (KS 0.042; the median cycle time is 1.06 vs
+0.81 days). The process differs a lot from 2017: 58% of applications are denied (2017:
+12%), 13% go through the documents loop (2017: 47%), and about 750 cases are open
+(2017: about 1,900).
+
 ### 2.5 Common random numbers
 Every source of randomness has its own random stream:
 - arrivals;
@@ -267,6 +273,13 @@ Loss. It depends on the policy that uses the workers (see the re-measurement abo
 - **Reading it:** do_nothing = 1 exactly; 0 = the shock did no harm at no cost; below
   0 = less lateness than without the shock (the actions also spared cases loops they
   would have gone through anyway).
+- **Common Loss_base (BPI 2012).** The shocks are the same in both logs, but in 2012
+  D1 and D3 do little harm: most cases are denied before they reach offer dispatch or
+  the documents loop (own Loss_base D1 0.0125, D2 0.0784, D3 0.0107 Q-days). Dividing
+  by such a small Loss_base inflated their noise and the side benefits of actions on
+  the normal process (scores down to −2.6, overall intervals ±0.36–0.66). For 2012,
+  every shock therefore uses the mean of the three, 0.0339 Q-days, so each shock counts
+  by its real harm in one unit (overall intervals ±0.11–0.29). N stays per shock.
 
 ### 5.6 What the agent observes (38 features, all in [−1, 1])
 - **Shock:** active; time since onset; time since end; scenario (one-hot); cause
@@ -332,6 +345,8 @@ The shock's remaining length is hidden.
 
 ## 7. Results so far (benchmark, 16 episodes per scenario)
 
+### 7.1 BPIC 2017
+
 | Policy | Objective | D1 | D2 | D3 |
 |---|---|---|---|---|
 | do_nothing | 1.000 | 1.000 | 1.000 | 1.000 |
@@ -362,6 +377,18 @@ The shock's remaining length is hidden.
     price it escalated every case it could (§5.4).
 
 ---
+
+### 7.2 BPI 2012 (baselines; agent in training)
+
+| Policy | Objective | D1 | D2 | D3 |
+|---|---|---|---|---|
+| do_nothing | 1.000 | 1.000 | 1.000 | 1.000 |
+| always substitute | 0.655 | 0.287 | 0.679 | 1.000 |
+| greedy | 0.556 | 0.511 | 0.838 | 0.318 |
+| rule (7 d, the best threshold in 2012) | 0.175 | 0.207 | 0.391 | −0.074 |
+
+Common Loss_base (§5.5). 2012 is noisier than 2017: about 220 decisions per episode
+against about 590.
 
 ## 8. From policy to white-box resilience engine
 

@@ -11,12 +11,12 @@ White-box resilience engine on the original BPIC2017 log. Design rationale:
 | 1 | Small triage proof of concept | ✅ passed on 3 of 3 training seeds |
 | 2 | Mine the full-log stage model | ✅ BPIC2017 mined; BPI2012 mined with the same code |
 | 3 | Base simulator + validation against the log | ✅ BPIC2017 9/9 checks; BPI2012 runs unchanged |
-| 4 | Q(t), Loss and recovery tracking | ✅ exact tracker, calibrated Q_ref, recovery tested |
+| 4 | Q(t), Loss and recovery tracking | ✅ exact tracker; Q_ref later removed (Loss = ∫(1−Q)dt, Phase 9) |
 | 5 | Disruptions D1, D2, D3, D6 (then D4, D5) | ✅ fixed 50-day episodes; customer patience deferred |
 | 6 | Recovery actions, scarce resources, costs | ✅ implemented and checked with fixed policies |
-| 7 | Environment | ⬜ |
-| 8 | Calibration and baselines | ⬜ |
-| 9 | Training | ⬜ |
+| 7 | Environment | ✅ per-case reward, do-nothing twin, shadow price |
+| 8 | Calibration and baselines | ✅ BPIC2017; BPI2012 (common Loss_base) |
+| 9 | Training | 🔄 BPIC2017 model 1 done (training_results.md); BPI2012 in progress |
 | 10 | Distillation to BPMN + DMN | ⬜ |
 | 11 | Experiments | ⬜ |
 
@@ -926,6 +926,64 @@ do-nothing (entropy −0.83 → −0.15, explained variance ≈ 0, value loss 26
   that need them. **Decision: keep the first prices (D1 0, D2 0, D3 1.19)**, since the
   agent trained with them already beats the rule; the re-measurement is reported as a
   check.
+
+#### Second log: BPI 2012 (same shocks, same method)
+- **Decision:** the shocks stay exactly as in BPIC 2017 (D1, D2, D3, 72–120 h). Some do
+  less harm in 2012, which is a result, not something to engineer away. Candidates
+  aimed at 2012's busiest steps (completion outage 0.220, intake outage 0.373 Q-days
+  of harm) were tested and not adopted.
+- **Setup (commit `d18ca37`):**
+  - `bpi2012_disruptions.json`: the 2017 config with the work items renamed
+    (`W_Nabellen offertes`, `W_Nabellen incomplete dossiers`, `W_Completeren aanvraag`).
+  - D1 substitute: the online-only channel is observed in 2017 and assumed for 2012
+    (2012 has a single `O_SENT`).
+  - `loan_model/logs.py`: `RIMS_LOG=bpi2012` selects the log in every script; 2012
+    runs get a `bpi2012_` name prefix.
+- **Validation (top-3 pool, 16 workers):** 8/9 checks; KS 0.042; median cycle time
+  1.06 vs 0.81 d is off (most cases are denied within a day). The process differs from
+  2017: 58% denied (2017 12%), 13% go through the documents loop (47%), ~750 open
+  cases (~1,900).
+- **Calibration:** normal Q mean 0.819 (2017 0.902). Per shock, against the
+  undisrupted twin:
+
+  | Shock | Own Loss_base, 16 seeds | Own Loss_base, 64 seeds | N decisions |
+  |---|---|---|---|
+  | D1 offer outage | 0.0165 | 0.0125 | 169 |
+  | D2 telephony outage | 0.0851 | 0.0784 | 410 |
+  | D3 documents surge | 0.0061 | 0.0107 | 66 |
+
+  D1 and D3 do little harm: most 2012 cases are denied before they reach offer
+  dispatch or the documents loop. The 16-seed values were unstable (D3 off by almost
+  a factor of 2), so the calibration was redone with 64 seeds.
+- **Noise problem and the fix: a common Loss_base.** Divided by their own tiny
+  Loss_base, D1 and D3 scores were dominated by noise and by side benefits of the
+  actions on the normal process (scores down to −2.6, overall intervals ±0.36–0.66),
+  and an agent's reward would have been scaled about 10× more in D3 than in 2017.
+  `calibrate_loan_resilience.py --common-base` gives every cycle shock the **mean of
+  their own Loss_base: 0.0339 Q-days** (own values kept as `loss_base_own`; commit
+  `d7405e0`). Each shock then counts by its real harm in one unit; N stays per shock.
+  The shocks themselves are unchanged.
+- **2012 baselines** (seeds 200–215 × 16 per shock, common Loss_base):
+
+  | Policy | Overall | vs do-nothing | D1 | D2 | D3 |
+  |---|---|---|---|---|---|
+  | do-nothing | 1.000 | — | 1.000 | 1.000 | 1.000 |
+  | always retry | 0.925 | −0.08 ± 0.14 | 1.000 | 1.000 | 0.776 |
+  | always reassign | 0.866 | −0.13 ± 0.11 | 1.000 | 1.000 | 0.597 |
+  | always substitute | 0.655 | −0.35 ± 0.26 | 0.287 | 0.679 | 1.000 |
+  | always escalate | 0.959 | −0.04 ± 0.16 | 0.984 | 0.865 | 1.027 |
+  | greedy | 0.556 | −0.44 ± 0.14 | 0.511 | 0.838 | 0.318 |
+  | **rule (7 d)** | **0.175** | **−0.83 ± 0.25** | 0.207 | 0.391 | −0.074 |
+  | rule 1 / 2 / 4 / 10 / 14 d | 0.317 / 0.359 / 0.285 / 0.311 / 0.268 | | | | |
+
+  With their own Loss_base the same runs gave the rule −1.089 and intervals up to
+  ±0.66. The best threshold in 2012 is 7 days (2017: 1 day). 2012 stays noisier than
+  2017 (fewer decisions per episode, ~220 vs ~590).
+- **Step 5a, no shadow price** (`bpi2012_loan_ppo_w1_s0_case_b0.5_noprice_100k`,
+  ~102k steps): evaluation 0.90 → 0.80 → 0.93; explained variance only 0.01–0.02
+  (2017: 0.15–0.27); reward per case 0.9 → ~1.5–1.9. Training mix in the last third:
+  D1 substitute 69%, D2 do-nothing 51% / substitute 43%, D3 reassign 56%. To be
+  continued for another 100k steps before the shadow price is measured.
 
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
