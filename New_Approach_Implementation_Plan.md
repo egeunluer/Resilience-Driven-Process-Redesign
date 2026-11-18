@@ -1052,6 +1052,31 @@ documents visit p90 now 0.4 d. Approval (Visto Bueno) queues for its 3 pool work
 reception excluded), utilisation 0.15; cycle time KS 0.064, p50 6.6 d, p90 38.8 d, outcomes and
 arrivals ok, open cases 95 (the log's 148 is its March backlog peak, see above).
 
+**Phase 4 (Q(t), Loss), 2026-11-18** — `RIMS_LOG=consulta python3 calibrate_loan_resilience.py --pool-k 3`
+(16 seeds × 120 days, `consulta_pool3_resilience_calibration.json`, log `tmp_loan_training/consulta_calibration_q.log`).
+No code changes: Q(t) and the threshold-free Loss are generic.
+
+| | Consulta | BPI 2012 | BPIC 2017 |
+|---|---|---|---|
+| Q mean (undisrupted) | 0.771 | 0.819 | 0.903 |
+| Q daily sd | **0.045** | 0.014 | 0.010 |
+| Q daily p1 | 0.671 | 0.788 | — |
+| baseline Loss per day | 0.23 Q-day | 0.18 | 0.10 |
+| open cases | ~91 | ~750 | ~1,900 |
+| delay expiries | none (no timer) | 1.24/day | — |
+
+- Deadlines (p90 age at stage exit, floor 1 d): submission 6.2 d, validation 15.8, cancellation 24.8,
+  homologation 25.3, review 36.5, documents 46.2, evaluation 73.7, pre-homologation 81.0,
+  final validation 84.4, approval 84.7, credit transfer 88.3.
+- 23% of open cases are off track at a random moment although each deadline is a p90: slow cases stay
+  open longer, so they are over-represented among the open ones (same effect, smaller, in the loan logs).
+  Off track by stage: submission 42%, review 43%, validation 23%, cancellation 23%, evaluation 6%.
+- **Q is 3–5× noisier day to day than in the loan logs** (about 90 open cases: one case = 1.1 pp of Q).
+  The do-nothing twin removes this noise from the reward, but a disruption has to move Q by clearly more
+  than ~0.05 for a day to stand out, and Loss_base must be measured on enough seeds (64, as for BPI 2012).
+- Cancellation is an outcome, not a recovery action: a cancelled request leaves Q like a finished one;
+  it only counts as harm while it was off track.
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);
