@@ -985,6 +985,39 @@ do-nothing (entropy −0.83 → −0.15, explained variance ≈ 0, value loss 26
   D1 substitute 69%, D2 do-nothing 51% / substitute 43%, D3 reassign 56%. To be
   continued for another 100k steps before the shadow price is measured.
 
+#### Third log: ConsultaDataMining201618 (Phase 2 done, 2026-11-18)
+
+Course-credit recognition (*homologación*) requests at a Colombian university, Feb–Jun 2016:
+954 cases, 6.4 arrivals/day, ~148 open cases, median cycle time 5.3 d (p90 46 d), 49% cancelled.
+Chosen over the other logs in the repo because it is real, has individual staff, a real
+alternative path (group recognition vs course-by-course evaluation), a real cancellation
+outcome and a semester-driven arrival surge.
+
+**Miner changes (generic, opt-in through the activity map):**
+- `wide_start`: start and completion on one row (`start:timestamp`) are split into start/complete events.
+- `requester_activity`: sessions by the case's own requester (the student who files the request,
+  resource = their ID) are not staff work. Without it, ~100 repeat petitioners would become "workers".
+- `first_end_stage_decides`: the cancellation notice decides the outcome, not Disco's artificial `End` after it.
+
+**Activity map** (`Module 1/artifacts/consulta_activity_map.json`): no schedule events exist, so a
+stage is entered when its work item starts; the wait before the next work item is the tail of
+the stage before it. 11 stages: submission (student, no staff work) → validation → review /
+homologation / documents → evaluation (faculty) → pre-homologation / final validation → approval
+→ credit transfer, plus cancellation. Ignored: the student-information lookup (instant, done by
+the student), document follow-up, course-level cancellation.
+
+**Mined** (`consulta_stage_model.json`): 68 staff workers with ≥3 sessions; outcome 51% done / 49%
+cancelled; deadlines (p90 age at stage exit) 6 d (submission) to 88 d (credit transfer).
+
+**Known issues for Phase 3:**
+- Credit transfer has no worker with ≥3 sessions (8 sessions in total, 88% of its visits have no
+  work session); documents has 2 qualified workers, pre-homologation 4.
+- Zero-length sessions (start = complete) are dropped, as in the other logs: about half of
+  `Revisar curso` rows, so review is often a pure wait.
+- Arrivals fall from ~55/week (Feb–Apr) to ~25/week (May–Jun, semester end); the weekly profile averages them.
+- The log ends on 1 Jul 2016, so cases still open then look finished (no completion milestone).
+- Only ~150 open cases (BPIC 2017 ~1,900), so far fewer decisions per disruption.
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);

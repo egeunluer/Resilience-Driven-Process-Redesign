@@ -32,8 +32,10 @@ from loan_model.calendar_time import WorkingClock, EPOCH  # noqa: E402
 
 
 # --------------------------------------------------------------------- loading
-def load_log(path, case_attr_keys):
-    """Events (case, activity, lifecycle, resource, time [UTC]) and case attributes."""
+def load_log(path, case_attr_keys, wide_start=None):
+    """Events (case, activity, lifecycle, resource, time [UTC]) and case attributes.
+    wide_start: event attribute holding the start time when start and completion are on
+    one row (Consulta: start:timestamp); each such row becomes a start and a complete event."""
     ev_rows, case_rows = [], []
     for _, tr in etree.iterparse(path, tag='{*}trace'):
         attrs, events = {}, []
@@ -47,6 +49,10 @@ def load_log(path, case_attr_keys):
         cid = attrs.get('concept:name')
         case_rows.append({'case': cid, **{k: attrs.get(k) for k in case_attr_keys}})
         for a in events:
+            if wide_start and a.get(wide_start):
+                ev_rows.append((cid, a.get('concept:name'), 'start', a.get('org:resource'), a.get(wide_start)))
+                ev_rows.append((cid, a.get('concept:name'), 'complete', a.get('org:resource'), a.get('time:timestamp')))
+                continue
             ev_rows.append((cid, a.get('concept:name'), (a.get('lifecycle:transition') or 'complete').lower(),
                             a.get('org:resource'), a.get('time:timestamp')))
         tr.clear()
@@ -160,7 +166,10 @@ def mine(m, ev, cases):
             continue
         case_span.append((ts[0], ts[-1]))
         cycle.append(ts[-1] - ts[0])
-        last_stage = ms[-1][0]
+        # the first end stage decides the outcome when the log appends an artificial end
+        # marker after the real one (Consulta: cancellation notice, then Disco's "End")
+        first_end = next((x[0] for x in ms if x[0] in end_stages), None)
+        last_stage = first_end if m.get('first_end_stage_decides') and first_end else ms[-1][0]
         outcome[last_stage if last_stage in end_stages else 'open'] += 1
         visits, vcount = [], Counter()
         for i, (s, t, r) in enumerate(ms):
@@ -172,8 +181,10 @@ def mine(m, ev, cases):
                                exit_res=nxt[2] if nxt else None, v=vcount[s], sessions=[], opt=set(), offers=0))
         rounds[vcount.get('validation', 0)] += 1
         incomplete_cases += vcount.get('incomplete', 0) > 0
-        # sessions -> visits
-        for act, r, s0, s1 in sessions_of(zip(acts, lcs, ress, ts), lc_open, lc_close, system):
+        # sessions -> visits. A requester's own work (Consulta: the student who files the
+        # request) is not staff work: drop every session by that case's requester.
+        own = {r for a, r in zip(acts, ress) if a == m.get('requester_activity')}
+        for act, r, s0, s1 in sessions_of(zip(acts, lcs, ress, ts), lc_open, lc_close, system | own):
             worker_sessions[r][act].append(s1 - s0)
             item_sessions[act].append(s1 - s0)
             day = (t0_abs + pd.Timedelta(seconds=s0)).tz_convert(tz)
@@ -364,7 +375,7 @@ def main():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(args.map), '..', '..'))
     log = args.log or os.path.join(repo_root, m['log_path'])
     print(f'Loading {log} ...', flush=True)
-    ev, cases = load_log(log, m['case_attributes'])
+    ev, cases = load_log(log, m['case_attributes'], m.get('wide_start'))
     print(f'{ev["case"].nunique()} cases, {len(ev)} events', flush=True)
     model = mine(m, ev, cases)
     with open(args.out, 'w') as f:

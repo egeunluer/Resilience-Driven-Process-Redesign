@@ -12,6 +12,9 @@ LOGS = {
                  'calibration': 'bpic2017_pool3_resilience_calibration.json'},
     'bpi2012': {'model': 'bpi2012_stage_model.json', 'disruptions': 'bpi2012_disruptions.json',
                 'calibration': 'bpi2012_pool3_resilience_calibration.json'},
+    # Phase 2 only so far: disruption config and calibration are written in later phases
+    'consulta': {'model': 'consulta_stage_model.json', 'disruptions': 'consulta_disruptions.json',
+                 'calibration': 'consulta_resilience_calibration.json'},
 }
 
 
