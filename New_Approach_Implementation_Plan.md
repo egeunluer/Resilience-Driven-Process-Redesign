@@ -1018,6 +1018,40 @@ cancelled; deadlines (p90 age at stage exit) 6 d (submission) to 88 d (credit tr
 - The log ends on 1 Jul 2016, so cases still open then look finished (no completion milestone).
 - Only ~150 open cases (BPIC 2017 ~1,900), so far fewer decisions per disruption.
 
+**Phase 3 (simulator + validation), 2026-11-18** — `validate_loan_model.py`, 3 seeds × 240 days
+(`tmp_loan_training/validate_consulta_{full,pool3}.log`). Code: a work item with no qualified
+worker in the pool (credit transfer) takes its logged session time without a worker (only
+Consulta has such an item; BPIC 2017 / BPI 2012 unchanged); the validation reads the outcomes
+from the model instead of the loan names.
+
+| Check | Simulated (full / top-3 pool) | Log | |
+|---|---|---|---|
+| cycle time KS | 0.058 / 0.066 | — | ok |
+| cycle time p50 | 6.4 / 6.7 d | 5.3 d | +20% |
+| cycle time p90 | 38 / 39 d | 46 d | −17% |
+| done / cancelled | 0.508 / 0.492 | 0.514 / 0.486 | ok |
+| arrivals per day | 6.4 | 6.4 | ok |
+| open cases (median) | 95 / 95 | 148 | −36% |
+| stage visit durations (p50/p90) | close for all stages except approval p90 8.0 vs 4.6 d and documents | | |
+| worker utilisation | 0.07 / 0.15 | | |
+
+Per outcome the cycle times are close (done p50 7.2 vs 6.5 d, cancelled 5.3 vs 4.1 d; p90 43 vs 53 d
+and 31 vs 31 d). **The open-case gap is the log's non-stationarity, not the simulator:** cases
+that arrived in March (semester start) took 26 d on average, those of February 16 d, those of
+May–June 2–7 d (partly censored by the log's end). The open-case target is measured in
+mid-March to mid-May, at the backlog's peak (time average 150); the mined model pools all
+periods, and Little's law on the log's own arrivals and mean cycle time (6.6/day × 14.2 d ≈ 93)
+gives what the simulator shows. The same pooling shortens the simulated tail (p90).
+
+Smaller issues: documents (23 cases) had 2 qualified workers who are rarely present (queue p50
+144 h); fixed by `workerless_items` in the activity map (logged session duration, no worker):
+documents visit p90 now 0.4 d. Approval (Visto Bueno) queues for its 3 pool workers (visit p50
+0.5 vs 0.03 d, p90 9.1 vs 4.6 d).
+
+**Accepted (user, 2026-11-18)**, with the top-3 pool as for the other logs: 10 workers (document
+reception excluded), utilisation 0.15; cycle time KS 0.064, p50 6.6 d, p90 38.8 d, outcomes and
+arrivals ok, open cases 95 (the log's 148 is its March backlog peak, see above).
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);

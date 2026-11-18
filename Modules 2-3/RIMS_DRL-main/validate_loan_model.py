@@ -109,7 +109,7 @@ def main():
         row(f'cycle time p{p} (days)', sv, lv, ok=abs(sv - lv) <= 0.1 * lv if p in (50, 90) else None)
     ks = ks_vs_quantiles(r['cyc'], vt['cycle_time_quantiles'])
     row('cycle time KS distance', ks, 0.0, '{:.3f}', ok=ks <= 0.1)
-    for o in ('END_accepted', 'END_cancelled', 'END_denied'):
+    for o in vt['outcome']:          # end stages of the log (and 'open': cases unfinished at the log's end)
         sv, lv = r['outc'][o] / r['n'], vt['outcome'].get(o, 0)
         row(f'outcome {o} share', sv, lv, '{:.3f}', ok=abs(sv - lv) <= 0.03)
     row('cases with incomplete loop', r['inc'] / r['n'], vt['incomplete_case_share'], '{:.3f}',

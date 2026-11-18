@@ -6,7 +6,7 @@
   "first_event": "2016-02-01 11:24:02+00:00",
   "last_event": "2016-06-30 22:13:33+00:00",
   "n_cases": 954,
-  "mined_at": "2026-11-18T20:55:20+00:00",
+  "mined_at": "2026-11-18T21:06:25+00:00",
   "units": "seconds",
   "n_quantiles": 101
  },
@@ -36313,6 +36313,9 @@
    ]
   }
  },
+ "workerless_items": [
+  "Recepcion de documentos"
+ ],
  "workers": {
   "1007": {
    "active_day_share": 0.2844,

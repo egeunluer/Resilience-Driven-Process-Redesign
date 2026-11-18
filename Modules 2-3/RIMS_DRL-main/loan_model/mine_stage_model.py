@@ -337,6 +337,7 @@ def mine(m, ev, cases):
                    'sent_channel': shares(online_only)},
         'stages': stages,
         'work_items': work_items,
+        'workerless_items': m.get('workerless_items', []),
         'workers': workers,
         'calendar': calendar,
         'timers': {tm['name']: {'stage': tm['stage'], 'target': tm['target'], 'anchor_marker': tm['anchor_marker'],

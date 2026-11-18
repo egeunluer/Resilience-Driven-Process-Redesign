@@ -78,8 +78,13 @@ class StageModel:
         self.pool = pool
         self.qualified = defaultdict(list)
         self.median_pt = {}
+        # work items done without a worker (too few qualified workers in the log, e.g.
+        # Consulta's document reception): sessions take their logged duration
+        workerless = set(m.get('workerless_items', []))
         for w, spec in self.workers.items():
             for item, d in spec['sessions'].items():
+                if item in workerless:
+                    continue
                 self.qualified[item].append(w)
                 self.median_pt[(w, item)] = d['session_duration'][len(d['session_duration']) // 2]
 
@@ -88,7 +93,7 @@ def top_k_pool(model_dict, k):
     """Constrained pool: for every work item, the k workers with the most sessions
     for it in the log (union over work items)."""
     pool = set()
-    for item in model_dict['work_items']:
+    for item in set(model_dict['work_items']) - set(model_dict.get('workerless_items', [])):
         ranked = sorted((w for w, spec in model_dict['workers'].items() if item in spec['sessions']),
                         key=lambda w: -model_dict['workers'][w]['sessions'][item]['n'])
         pool.update(ranked[:k])
@@ -188,7 +193,8 @@ class Simulator:
         self.queues = defaultdict(deque)          # work item -> deque of (t_request, event, case_id)
         # sorted, not a set: _serve breaks ties between equally old requests by this
         # order, and set order of strings changes with the per-process hash seed
-        self.worker_items = {w: sorted(spec['sessions']) for w, spec in self.sm.workers.items()}
+        self.worker_items = {w: sorted(i for i in spec['sessions'] if w in self.sm.qualified[i])
+                             for w, spec in self.sm.workers.items()}
         # bookkeeping (event log)
         self.cases = {}                             # id -> dict
         self.sessions = []                          # (case, item, worker, t_request, t0, t1)
@@ -468,6 +474,12 @@ class Simulator:
             bypassed = yield from self._blocked(cid, stage, lambda: self.disruption.blocks_session(item))
             if bypassed:
                 return          # done another way (written contact / senior team)
+        if not self.sm.qualified[item]:
+            # no worker in the pool did this step often enough in the log, or it is a
+            # workerless item (Consulta): its sessions take their logged duration
+            yield self.env.timeout(sample_quantiles(self.sm.m['work_items'][item]['session_duration'],
+                                                    self.cases[cid]['srng']))
+            return
         t_req = self.env.now
         req = self.request_worker(item, cid)
         try:

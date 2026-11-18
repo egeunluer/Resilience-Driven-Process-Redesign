@@ -6,8 +6,18 @@
   "wide_start": "start:timestamp",
   "requester_activity": "Radicar Solicitud Homologacion",
   "first_end_stage_decides": true,
-  "system_resources": ["Start", "End"],
-  "lifecycle": {"open": ["start"], "close": ["complete"]},
+  "system_resources": [
+    "Start",
+    "End"
+  ],
+  "lifecycle": {
+    "open": [
+      "start"
+    ],
+    "close": [
+      "complete"
+    ]
+  },
   "case_attributes": [],
   "start_stage": "submission",
   "stage_entry_milestones": {
@@ -26,7 +36,10 @@
     "Notificacion estudiante cancelacion soli": "END_cancelled",
     "End": "END_done"
   },
-  "end_stages": ["END_done", "END_cancelled"],
+  "end_stages": [
+    "END_done",
+    "END_cancelled"
+  ],
   "stage_work_items": {
     "submission": "(student submission, no staff work)",
     "validation": "Validar solicitud",
@@ -41,11 +54,24 @@
     "cancellation": "Cancelar Solicitud"
   },
   "optional_work_items": {},
-  "ignored_activities": ["Start", "Traer informacion estudiante - banner", "Avanzar recepcion documentos", "Cancelar curso"],
+  "workerless_items": [
+    "Recepcion de documentos"
+  ],
+  "_workerless_items": "Done without a worker (logged session duration): document reception has only 2 workers with >=3 sessions, rarely present, so cases queued for days (p50 144 h) where the log shows none.",
+  "ignored_activities": [
+    "Start",
+    "Traer informacion estudiante - banner",
+    "Avanzar recepcion documentos",
+    "Cancelar curso"
+  ],
   "case_flags": {},
   "markers": {},
   "timers": [],
-  "visit_buckets": [1, 2, 3],
+  "visit_buckets": [
+    1,
+    2,
+    3
+  ],
   "session_attach_tolerance_s": 60,
   "min_worker_sessions": 3,
   "deadline_quantile": 0.9,
