@@ -93,3 +93,14 @@ Local time zone Europe/Amsterdam (the log stores UTC).
 | per-case reward | r_i = −[κ_a + (N/Loss_base)·((1−β)·ΔL_case,i + β·S_i)], both Loss parts minus the same quantity in the do-nothing twin (the episode replayed with every decision do_nothing), so lateness that happens anyway cancels; ΔL_case: the case's own Loss (dt/open for every off-track moment, and after an expiry) until its next decision; S_i: windowed share of the process Loss (the Loss at time s split equally among the decisions made before s, window = whole horizon) | — | imposed | β = 0.5. β = 0 slid to do-nothing (the benefit of D3 retry falls on other cases); the earlier β term (Loss until the next decision) gave the last decision all remaining Loss and collapsed training |
 | w (resilience vs cost weight) | 1 (default) | — | assumed | Pareto sweep |
 | expiry / deadline-miss penalty | TBD × c_p | — | assumed | residual penalty |
+
+## 6. Third log: BPI Challenge 2019 (purchase-to-pay), scope
+
+| Parameter | Value | Source | Meaning and rationale |
+|---|---|---|---|
+| item category | "3-way match, invoice before GR" only (221,010 of 251,734 items, 88%) | imposed (user, 2026-11-19) | a case is an item whose invoice is matched against purchase order and goods receipt and may be booked before the goods arrive; invoice/goods-receipt mismatches give a payment block (the D3 loop, 24% of items). The other categories (invoice after GR, consignment, 2-way match) have different routes and are 12% of items |
+| case level | purchase-order item (as in the log) | imposed (user) | each item is simulated as an independent case. A purchase document has 3.3 items on average whose goods receipts and invoices are often booked together; the simulator does not couple them (stated simplification) |
+| scale | 5% of the mined arrival rate (~35 items/day, ~2,700 open) | assumed (user), checked in validation | same flow, routing and waits as the log at 1/20 of its volume; counts (items, decisions, case-days) are 1/20, shares and ratios (Q, objective) unchanged. Needed for speed: ~55,000 open items would make episodes 25–30× slower than BPIC 2017 |
+| worker pool | top-3 users per work item (batch users excluded), not scaled; next ranks = escalation team | imposed, as BPIC 2017 / BPI 2012 | with the 5% scale each pool worker gets ~13 events/day where the same people did 58–128/day in the log (payment blocks 2.6 vs 50.5/day): less busy than in the log, unlike BPIC 2017. Work durations are assumed (completion events only), so utilisation is checked in validation; the scale is the knob if needed |
+| Consulta | dropped | — | D1–D3 do no measurable harm there and its own shocks lowered the share-based Loss (see the implementation plan, "Consulta dropped") |
+

@@ -1077,6 +1077,67 @@ No code changes: Q(t) and the threshold-free Loss are generic.
 - Cancellation is an outcome, not a recovery action: a cancelled request leaves Q like a finished one;
   it only counts as harm while it was off track.
 
+**Consulta dropped (2026-11-19).** Its own shocks C1–C3 did no measurable harm at 72–120 h, and C2
+(evaluator outage) and C3 (semester surge) *lowered* the share-based Loss at every length tested (up to
+5 weeks): with ~90 open cases, holding on-track cases open or adding new (on-track) ones raises the
+on-track share (one case = 1.1 pp of Q; BPIC 2017: 0.05 pp). The loan logs' D1–D3, mapped as closely as
+Consulta allows (result dispatch blocked, cancellation notice blocked, validation → documents ×1.5), did
+no harm either (−0.04 to −0.01 Q-days; at most +4 off-track case-days against +370–450 in the loan logs):
+its result step sits where deadlines are 85–88 d, it has no contact work, and only 3% of cases enter the
+documents loop. Changing the shocks per log was rejected (user): every log keeps D1–D3. Consulta's
+profiling, stage model and these tests stay in the repo as a documented negative case; the harm table is
+evidence for a limitation of the share-based Q in small processes.
+
+Other logs profiled and rejected: Road Traffic Fines (no resources on 10 of 11 activities, dates only),
+Hospital Billing (completion events only, shifted timestamps, back-office resources 89–98% missing),
+Sepsis, Helpdesk, Productions, PurchasingExample, confidential_1000.
+
+#### Third log: BPI Challenge 2019 (purchase-to-pay), scope decisions (2026-11-19)
+
+Profile (`Event Logs/BPI_Challenge_2019.xes`): 251,734 purchase-order items, 1.6M events, 42 activities,
+essentially 2018; ~700 new items/day, ~55,000 open, cycle time median 64 d (p90 126 d). Completion events
+only. Main flow: create PO item → vendor invoice → goods receipt (warehouse, 187 users) → record invoice
+(accounts payable, 25 users, top 10 do 97%) → remove payment block (24% of items, 9 users) → clear invoice
+(payment), 75% on Thursdays: a weekly payment run. D1–D3 map onto it with real grounding: D1 payment run
+fails (`Clear Invoice` blocked), D2 vendor channel down (order confirmations / invoice intake), D3 surge
+of invoice/goods-receipt mismatches (more payment blocks; the loop exists for 24% of items).
+
+Decisions (user, 2026-11-19):
+
+1. **Main item category only.** BPIC 2019 has four item categories with different control flow:
+   "3-way match, invoice before GR" (221,010 items, 88%), "3-way match, invoice after GR" (15,182),
+   "Consignment" (14,498, no invoice), "2-way match" (1,044, no goods receipt). Only the first is mined
+   and simulated. Meaning here: a case is an item whose invoice is matched against both the purchase
+   order and the goods receipt, and which may be booked before the goods arrive; when invoice and goods
+   receipt do not match, the invoice gets a payment block. This is the category where the D3 loop
+   exists. The other three are dropped (they would need their own stage routes; together 12%).
+2. **Item level.** A case is one purchase-order item (`concept:name` of the trace, a purchase document
+   + item number), as in the log, not the purchase document. Meaning here: the 221,010 items of the
+   main category are simulated as independent cases, each with its own route, waits and deadlines.
+   Known simplification: one purchase document holds 3.3 items on average, and its goods receipts and
+   invoices often cover several items at once (same time, same user); the simulator does not couple
+   them. This is accepted and stated; aggregating to documents (76,349) would change what a "case" is.
+3. **5% scale.** The simulator generates 5% of the mined arrival rate (~35 items/day instead of ~700;
+   open items ~2,700 instead of ~55,000, still more than BPI 2012's ~750). Meaning here: the simulated
+   process has the same flow, routing and waits as the log at 1/20 of its volume; absolute counts
+   (items, decisions per episode, Loss in case-days) are 1/20 of the real ones, shares and ratios (Q,
+   objective) are unchanged. Why: ~55,000 open items would make an episode 25–30× slower than in
+   BPIC 2017.
+4. **Top-3 worker pool, as for the other logs.** For every work item, the 3 users with the most
+   events for it (batch users excluded) form the pool; the next-ranked users outside it are the
+   escalation team. The pool is not scaled with the volume. Consequence of combining it with the 5%
+   scale: each pool worker gets ~13 events/day (create PO item, goods receipt, record invoice) where
+   the same people did 58–128/day in the log; remove payment block 2.6/day vs 50.5/day. In BPIC 2017
+   the top-3 pool took the full volume and was busier than in the log; here it is less busy. Since the
+   log has no start events, work durations (and so utilisation) are assumed anyway; validation checks
+   that queueing for workers stays realistic, and the scale (not the pool rule) is the knob if the
+   pool is too idle for D1–D3 to bite through capacity.
+
+Still to decide in Phase 2/3: work durations (the log has completion events only: assumed per step, or
+estimated from the gaps between a user's consecutive events), the weekly payment run (a scheduled step
+in the simulator, needed for D1), the episode horizon (~90 d, cycle times are months), dropping the ~100
+events dated outside 2018–Jan 2019.
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);
