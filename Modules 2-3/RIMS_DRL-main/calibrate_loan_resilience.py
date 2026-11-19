@@ -33,11 +33,11 @@ WARMUP_DAYS = 45
 DEADLINE_FLOOR_S = 86400.0
 
 
-def daily_q(sm, seed, days):
+def daily_q(sm, seed, days, warmup=WARMUP_DAYS):
     tr = QTracker(sm.m['deadlines'], sm.m['end_stages'], deadline_floor_s=DEADLINE_FLOOR_S)
-    sim = Simulator(sm, seed=seed, observers=[tr], record=False).run(WARMUP_DAYS)
+    sim = Simulator(sm, seed=seed, observers=[tr], record=False).run(warmup)
     out, expiries = [], 0
-    for d in range(WARMUP_DAYS, WARMUP_DAYS + days):
+    for d in range(warmup, warmup + days):
         tr.reset_loss(d * 86400)
         sim.run(d + 1)
         tr.advance((d + 1) * 86400)
@@ -132,6 +132,8 @@ def main():
     ap.add_argument('--common-base', action='store_true',
                     help='--scenarios: one Loss_base for all cycle scenarios (their mean; used for BPI 2012)')
     ap.add_argument('--disruptions', default=paths()[1])
+    ap.add_argument('--warmup', type=int, default=WARMUP_DAYS,
+                    help='days before measuring (BPIC 2019: 150, its cycle times are months)')
     args = ap.parse_args()
     sm = StageModel(args.model)
     tag = ''
@@ -144,7 +146,7 @@ def main():
         return
     daily, exp = [], 0
     for s in args.seeds:
-        q, e = daily_q(sm, s, args.days)
+        q, e = daily_q(sm, s, args.days, args.warmup)
         daily += q
         exp += e
     daily = np.array(daily)
@@ -154,7 +156,7 @@ def main():
     cal = {
         'model': os.path.basename(args.model),
         'pool_k': args.pool_k, 'pool': sm.pool,
-        'seeds': args.seeds, 'warmup_days': WARMUP_DAYS, 'measured_days_per_seed': args.days,
+        'seeds': args.seeds, 'warmup_days': args.warmup, 'measured_days_per_seed': args.days,
         'deadline_floor_s': DEADLINE_FLOOR_S,
         'deadlines_s': {k: max(v, DEADLINE_FLOOR_S) for k, v in sm.m['deadlines'].items()},
         'q_mean': float(daily.mean()), 'q_daily_sd': float(daily.std()),

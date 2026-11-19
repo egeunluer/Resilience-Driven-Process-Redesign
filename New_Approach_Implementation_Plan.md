@@ -1234,6 +1234,29 @@ The validation script now scales count targets by `arrivals.scale` and takes `--
 The two "CHECK" rows of the script are the log's 3.1% items still open at its end (the simulation
 counts finished items only); relative to finished items the shares match.
 
+**Phase 4 (Q(t), Loss), 2026-11-19** — `RIMS_LOG=bpic2019 python3 calibrate_loan_resilience.py --pool-k 3
+--warmup 150` (new `--warmup` option: open items need ~150 d to settle; 16 seeds × 120 d,
+`bpic2019_pool3_resilience_calibration.json`, `tmp_loan_training/bpic2019_calibration_q.log`).
+
+| | BPIC 2019 (10%) | BPI 2012 | BPIC 2017 | Consulta |
+|---|---|---|---|---|
+| Q mean | 0.859 | 0.819 | 0.903 | 0.771 |
+| Q daily sd | 0.015 | 0.014 | 0.010 | 0.045 |
+| Q daily p1 | 0.833 | 0.788 | — | 0.671 |
+| baseline Loss per day | 0.14 Q-day | 0.18 | 0.10 | 0.23 |
+| open items | ~5,000 | ~750 | ~1,900 | ~91 |
+
+- Deadlines (p90 age at stage exit): order 34.4 d, goods receipt 73.9 d, invoice 123.9 d, payment block 136.4 d.
+- Off track at a random moment: 14% (order 20%, goods receipt 20%, invoice 9%, payment block 11%).
+- One item is 0.02 pp of Q (Consulta 1.1 pp), so the share artefact is negligible here.
+- The payment run leaves a small weekly pattern: Q at noon 0.855 Mon–Wed, 0.861–0.863 Thu–Sat.
+- **Point for Phase 5 (D1 = payment run fails):** the items a failed run holds back are mostly on track
+  (they are paid ~79 d after creation against a 124 d invoice deadline), so missing one run delays them
+  a week without making them late. Q measures lateness against the mined p90 deadlines, not against
+  the payment due date, so D1's harm may be small; its harm curve is measured first in Phase 5.
+- The episode warm-up (40 d in `loan_model/episode.py`) and horizon (50 d) are too short for this log
+  (cycle times of months); both are set in Phase 5 from the harm curves.
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);

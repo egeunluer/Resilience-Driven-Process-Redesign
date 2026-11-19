@@ -1,0 +1,51 @@
+{
+ "model": "bpic2019_stage_model.json",
+ "pool_k": 3,
+ "pool": [
+  "user_001",
+  "user_006",
+  "user_012",
+  "user_015",
+  "user_020",
+  "user_023",
+  "user_029",
+  "user_030",
+  "user_034",
+  "user_036",
+  "user_040",
+  "user_057"
+ ],
+ "seeds": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15
+ ],
+ "warmup_days": 150,
+ "measured_days_per_seed": 120,
+ "deadline_floor_s": 86400.0,
+ "deadlines_s": {
+  "order": 2969150.0,
+  "invoice": 10701086.2,
+  "goods_receipt": 6384237.3,
+  "payment_block": 11788802.4
+ },
+ "q_mean": 0.8587429481252011,
+ "q_daily_sd": 0.015108413821828343,
+ "q_daily_p1": 0.8326503565865387,
+ "baseline_loss_s_per_day": 12204.609281982619,
+ "baseline_delay_expiries_per_day": 0.0,
+ "loss_base_by_scenario": {}
+}
