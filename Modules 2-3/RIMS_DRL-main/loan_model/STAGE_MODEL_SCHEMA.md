@@ -11,6 +11,13 @@ specific to one event log lives in two JSON files in `Module 1/artifacts/`:
 To use another log (e.g. BPI2012), write a new activity map and rerun the miner. No code
 changes are needed as long as the process fits the stage semantics below.
 
+Optional activity-map keys: `wide_start` (start and completion on one row, Consulta),
+`requester_activity` (the requester's own steps are not staff work), `first_end_stage_decides`,
+`workerless_items`, and for completion-only logs a prepared event table: `log_path` may point
+to a `.parquet` table (case, activity, lifecycle, resource, time) with estimated start events
+(BPIC 2019: `loan_model/prepare_bpic2019.py`), and `validation_overrides_file` replaces
+`arrivals` and validation targets measured on more items than the mined ones.
+
 ## Stage semantics (how the simulator reads the model)
 
 A case is a sequence of **stage visits**. A visit starts at a stage-entry milestone

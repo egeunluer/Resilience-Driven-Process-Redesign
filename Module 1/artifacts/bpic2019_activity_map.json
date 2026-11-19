@@ -1,0 +1,104 @@
+{
+ "_doc": "Log-specific input for loan_model/mine_stage_model.py (schema: loan_model/STAGE_MODEL_SCHEMA.md). BPI Challenge 2019 (purchase-to-pay), item category '3-way match, invoice before GR' only; a case is a purchase-order item. The log has completion events only: loan_model/prepare_bpic2019.py estimates the start of every staff work step (start-time repair with calendar and simultaneous batches, loan_model/start_times.py) and writes the event table this map points to. As in Consulta, a stage is entered when its work item starts, and the wait until the next work item starts is the tail of the stage before it. Arrival = creation of the purchase-order item (the requisition, 19% of items, is a date-only system record and is ignored). Batch users and events without a user are 'automated' (no worker). Clear Invoice is the payment (weekly payment run, modelled in Phase 3); Delete Purchase Order Item ends a case without payment.",
+ "log_name": "bpic2019",
+ "log_path": "Modules 2-3/RIMS_DRL-main/tmp_loan_training/bpic2019_events.parquet",
+ "source_log": "Event Logs/BPI_Challenge_2019.xes",
+ "timezone": "Europe/Amsterdam",
+ "estimation_calendar": {
+  "hour_min": 6,
+  "_doc": "start of the working day for the start-time estimate: 1% quantile of the hour of human completion events (6:00-18:00 local)"
+ },
+ "system_resources": [
+  "automated"
+ ],
+ "lifecycle": {
+  "open": [
+   "start"
+  ],
+  "close": [
+   "complete"
+  ]
+ },
+ "case_attributes": [],
+ "start_stage": "order",
+ "stage_entry_milestones": {
+  "Create Purchase Order Item@start": "order",
+  "Record Goods Receipt@start": "goods_receipt",
+  "Record Invoice Receipt@start": "invoice",
+  "Remove Payment Block@start": "payment_block",
+  "Clear Invoice": "END_paid",
+  "Delete Purchase Order Item": "END_deleted"
+ },
+ "end_stages": [
+  "END_paid",
+  "END_deleted"
+ ],
+ "first_end_stage_decides": true,
+ "stage_work_items": {
+  "order": "Create Purchase Order Item",
+  "goods_receipt": "Record Goods Receipt",
+  "invoice": "Record Invoice Receipt",
+  "payment_block": "Remove Payment Block"
+ },
+ "optional_work_items": {},
+ "workerless_items": [],
+ "ignored_activities": [
+  "Block Purchase Order Item",
+  "Cancel Goods Receipt",
+  "Cancel Invoice Receipt",
+  "Cancel Subsequent Invoice",
+  "Change Approval for Purchase Order",
+  "Change Currency",
+  "Change Delivery Indicator",
+  "Change Final Invoice Indicator",
+  "Change Price",
+  "Change Quantity",
+  "Change Rejection Indicator",
+  "Change Storage Location",
+  "Change payment term",
+  "Create Purchase Requisition Item",
+  "Reactivate Purchase Order Item",
+  "Receive Order Confirmation",
+  "Record Service Entry Sheet",
+  "Record Subsequent Invoice",
+  "Release Purchase Order",
+  "Release Purchase Requisition",
+  "SRM: Awaiting Approval",
+  "SRM: Change was Transmitted",
+  "SRM: Complete",
+  "SRM: Created",
+  "SRM: Deleted",
+  "SRM: Document Completed",
+  "SRM: Held",
+  "SRM: In Transfer to Execution Syst.",
+  "SRM: Incomplete",
+  "SRM: Ordered",
+  "SRM: Transaction Completed",
+  "SRM: Transfer Failed (E.Sys.)",
+  "Set Payment Block",
+  "Update Order Confirmation",
+  "Vendor creates debit memo",
+  "Vendor creates invoice"
+ ],
+ "case_flags": {},
+ "markers": {},
+ "timers": [],
+ "validation_overrides_file": "Modules 2-3/RIMS_DRL-main/tmp_loan_training/bpic2019_events_targets.json",
+ "visit_buckets": [
+  1,
+  2,
+  3
+ ],
+ "session_attach_tolerance_s": 60,
+ "min_worker_sessions": 3,
+ "deadline_quantile": 0.9,
+ "n_quantiles": 101,
+ "batch_release": {
+  "activity": "Clear Invoice",
+  "target": "END_paid",
+  "_doc": "weekly payment run: 98.8% of payments are booked at moments when >=10 items are paid together; a run is a day with >=200 payments: 51 run days with 96% of payments (42 Thursdays, 7 Fridays), 90% by user_002. Mined: the run schedule (weeks with a run, runs per week, weekday, time of day) and per transition to END_paid the due lag (end of the last work -> payable, interval-censored between the previous run and the paying run) and the share of payments made by a run.",
+  "min_items_per_day": 200
+ },
+ "simulation_scale": 0.1,
+ "_simulation_scale": "the simulator generates 10% of the mined arrival rate (user, 2026-11-19); the top-3 pool is unchanged"
+}

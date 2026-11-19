@@ -1117,26 +1117,122 @@ Decisions (user, 2026-11-19):
    Known simplification: one purchase document holds 3.3 items on average, and its goods receipts and
    invoices often cover several items at once (same time, same user); the simulator does not couple
    them. This is accepted and stated; aggregating to documents (76,349) would change what a "case" is.
-3. **5% scale.** The simulator generates 5% of the mined arrival rate (~35 items/day instead of ~700;
-   open items ~2,700 instead of ~55,000, still more than BPI 2012's ~750). Meaning here: the simulated
-   process has the same flow, routing and waits as the log at 1/20 of its volume; absolute counts
-   (items, decisions per episode, Loss in case-days) are 1/20 of the real ones, shares and ratios (Q,
-   objective) are unchanged. Why: ~55,000 open items would make an episode 25–30× slower than in
-   BPIC 2017.
+3. **10% scale** (first 5%, changed to 10% by the user on 2026-11-19). The simulator generates 10% of
+   the mined arrival rate (~61 items/day instead of ~606; open items ~5,300 instead of ~53,000, more than
+   BPIC 2017's ~1,900). Meaning here: the simulated process has the same flow, routing and waits as the
+   log at 1/10 of its volume; absolute counts (items, decisions per episode, Loss in case-days) are 1/10
+   of the real ones, shares and ratios (Q, objective) are unchanged. Why: ~53,000 open items would make
+   an episode far slower than in BPIC 2017. Activity-map key `simulation_scale`, copied to
+   `arrivals.scale`.
 4. **Top-3 worker pool, as for the other logs.** For every work item, the 3 users with the most
    events for it (batch users excluded) form the pool; the next-ranked users outside it are the
-   escalation team. The pool is not scaled with the volume. Consequence of combining it with the 5%
-   scale: each pool worker gets ~13 events/day (create PO item, goods receipt, record invoice) where
-   the same people did 58–128/day in the log; remove payment block 2.6/day vs 50.5/day. In BPIC 2017
+   escalation team. The pool is not scaled with the volume. Consequence of combining it with the 10%
+   scale: each pool worker gets ~27 events/day (create PO item, goods receipt, record invoice) where
+   the same people did 58–128/day in the log; remove payment block ~5/day vs 50.5/day. In BPIC 2017
    the top-3 pool took the full volume and was busier than in the log; here it is less busy. Since the
    log has no start events, work durations (and so utilisation) are assumed anyway; validation checks
    that queueing for workers stays realistic, and the scale (not the pool rule) is the knob if the
    pool is too idle for D1–D3 to bite through capacity.
 
-Still to decide in Phase 2/3: work durations (the log has completion events only: assumed per step, or
-estimated from the gaps between a user's consecutive events), the weekly payment run (a scheduled step
-in the simulator, needed for D1), the episode horizon (~90 d, cycle times are months), dropping the ~100
-events dated outside 2018–Jan 2019.
+Still to decide in Phase 4/5: the episode horizon (~90 d, cycle times are months).
+
+**Work durations from a completion-only log (decision A2, 2026-11-19).** BPIC 2019 records only when a
+step was completed, so the simulator's session durations per (worker, step) cannot be measured as in
+BPIC 2017 / BPI 2012 (start/resume → suspend/complete). We estimate the missing start times with the
+established start-time repair method and check it first on the two logs where the truth is known.
+
+| Work | What it contributes | How we use it |
+|---|---|---|
+| Wombacher & Iacob (2013), start-time estimation in semi-structured processes | *enablement*: a step can start once the case's previous non-parallel step has completed | the enablement part of the estimate |
+| Zabka et al. (resource availability) | *availability*: a worker can start once their own previous step has completed | the availability part of the estimate |
+| Chapela-Campa, López-Pintado, Dumas et al. (2022), "Repairing Activity Start Times to Improve Business Process Simulation" (arXiv 2208.12224; Simod/Prosimos) | combines both: start = max(enablement, availability); "parallel" decided by a concurrency oracle mined from the log (two activities that follow each other in both orders are concurrent); availability only counts the worker's working time (resource calendars); evaluated by how well the resulting simulation reproduces the log, not per event | **the method we apply.** `Module 1/concurrency_oracle_estimator.py` reimplements the core (oracle + max rule) but without calendars; we add the calendar (availability starts no earlier than the start of the worker's working day, from the mined calendar) |
+| Martin, Swennen, Depaire, Jans, Caris, Vanhoof (2015), "Batch Processing: Definition and Event Log Identification" (SIMPDA); Martin, Pufahl, Mannhardt (2021), "Detection of batch activities from event logs" (Information Systems) | a *simultaneous batch*: events of one worker for one activity with the same timestamp were handled together | 59% of consecutive invoice bookings of the same AP clerk share one timestamp (one invoice covers several items). Such events form one batch: its start is estimated once (latest enablement of its items, worker availability) and its duration is split evenly over its items, instead of giving the first item all of it and the others 0 s |
+| Fracca, de Leoni, Asnicar, Turco (CAiSE 2022), start timestamps via process simulation | alternative: search duration profiles whose simulation fits the log | not used (needs many simulation runs per profile); cited as the alternative |
+
+**Check before use.** On BPIC 2017 and BPI 2012 the real work sessions are known. We hide their starts
+(keep only the completion of every session and milestone), estimate them, and compare per event and per
+(worker, step) against the real sessions, for: the naive estimate (time since the case's previous
+event), the current Module 1 estimator (oracle + max rule), + calendar, + calendar + batches. Baseline
+from the existing check (`Module 1/validate_concurrency_oracle.py` on BPIC 2017, against Module 1's
+start→complete pairs): naive median absolute error 27.8 h, oracle estimator 0.8 h but still ~9× too long
+at the median (it counts idle time, breaks and nights as work). The estimate is used for BPIC 2019 only if
+the extended version is clearly better than the current one; otherwise durations are assumed per step.
+Either way the durations are swept in the sensitivity analysis, and Phase 3 validation (does the
+simulation reproduce the log) is the final test, as in Chapela-Campa et al.
+
+**Check result (`validate_start_times.py`, `loan_model/start_times.py`), 2026-11-19.** Hidden: every
+start/resume; kept: the completion of every work session and milestone. Truth: the real sessions the
+simulator uses (not Module 1's start→complete pairs, which include suspended time).
+
+| | BPIC 2017 (252,808 sessions) | BPI 2012 (63,363 sessions) |
+|---|---|---|
+| naive (since the case's previous event): median error / est÷real / within 2× (events, pairs) | 8.6 min / 1.01 / 41%, 43% | 44.7 min / 17.4 / 10%, 6% |
+| oracle + max rule (Module 1 version) | 0.11 min / 1.01 / 70%, 69% | 0.80 min / 1.22 / 59%, 63% |
+| + calendar | 0.11 min / 1.01 / 70%, 69% | 0.81 min / 1.21 / 58%, 64% |
+| + calendar + batches | same as + calendar (these logs have no simultaneous batches) | same |
+
+Per work item the medians match within ~1 min (BPIC 2017: validate 2.2 vs 2.1 min, call after offers
+1.3 vs 1.0, complete 1.8 vs 2.7); the p90 is overestimated for rare items (fraud 202 vs 22 min). The
+calendar cuts the worst tails (BPI 2012 fraud p90 2,258 → 242 min; BPIC 2017 fraud 1,024 → 202 min).
+**Correction:** the earlier "~9× too long" came from Module 1's ground truth (start→complete pairs
+that include days of suspension) and is not the method's error. Batch splitting cannot be checked on
+these logs (no simultaneous events); it rests on Martin et al. Decision: the estimate (calendar +
+batches) is used for BPIC 2019.
+
+**Phase 2 (mining), 2026-11-19.** `python3 -m loan_model.prepare_bpic2019` then
+`python3 -m loan_model.mine_stage_model --map "../../Module 1/artifacts/bpic2019_activity_map.json"
+--out "../../Module 1/artifacts/bpic2019_stage_model.json"`. Decisions A1–A6 as recommended:
+stages order → goods receipt / invoice (either order) → payment block → paid or deleted; estimated
+durations; waits and routing from the 154,844 items created Jan–Aug 2018, arrivals (606/day, PO-item
+creation, all 2018 items) and the open-item target (53,123, Mar–Aug) from all 220,810 items; outcomes
+paid / deleted / open; batch users = automated; the 200 items with bad dates dropped.
+
+- Estimated work per step (median / p90): create PO item 2.1 / 48 min, goods receipt 1.0 / 73 min,
+  record invoice 1.0 / 9 min, remove payment block 0.5 / 7.4 min.
+- Qualified workers (≥3 sessions): create PO item 132, goods receipt 171, record invoice 25, remove
+  payment block 9; 308 in total.
+- Routing: order → goods receipt 88%, → invoice first 8%, → deleted 4%; invoice → paid 72%, → payment
+  block 19%, → goods receipt 9%; payment block → paid 98%.
+- Outcomes (mined items): paid 93.2%, deleted 3.7%, open 3.1%; cycle time p50 79 d, p90 133 d.
+- Deadlines (p90 age at stage exit): order 34 d, goods receipt 74 d, invoice 124 d, payment block 136 d.
+- Calendar Mon–Sat, 6–19 h (Saturday 1.9% of sessions).
+- About 220 items had their purchase order created months after their first event (retroactive
+  orders); the arrival rate is therefore taken from PO-item creation over 2018, not from the mined
+  items' span (which would give 440/day).
+
+**Payment run, mined from the log (user, 2026-11-19).** 98.8% of payments are booked in moments when
+≥10 items are paid together; a *run* is a day with ≥200 payments: 51 run days carry 96% of payments
+(`batch_release` in the activity map). Mined:
+- the schedule: 94% of weeks have a run, 91% of those one run (9% two); weekday Thursday 82%, Friday
+  14%, Tuesday/Wednesday 2% each; time of day p10/p50/p90 12.4 / 13.8 / 15.5 h;
+- per transition to *paid*, the **due lag**: from the end of the item's last work to the moment it
+  became payable. An item paid in run R_k was not paid in R_(k−1), so it became payable in
+  (max(ready, R_(k−1)), R_k]; the lag is drawn uniformly in that interval (interval-censored). Median
+  32–39 d (invoice 38.6 d, payment block 31.6 d; p90 ~92–95 d), i.e. the payment terms;
+- the share of payments made by a run (invoice 97%, payment block 96%); the rest keep the mined tail.
+
+Simulator (`batch_release`): a run process draws each week whether there is a run, how many, on which
+weekdays and at what time (own random stream); an item that is due waits for the next run. Over 20
+seeds × 52 weeks: 53 runs per year, Thursday 76%, Friday 18% (log 82% / 14%). D1 (payment run fails)
+will block this release.
+
+**Phase 3 (validation), 2026-11-19** — top-3 pool (12 workers), 10% scale, warm-up 150 d (cycle times
+are months), 3 seeds × 420 d (`tmp_loan_training/validate_bpic2019_pool3.log`):
+
+| Check | Simulated | Log | |
+|---|---|---|---|
+| cycle time KS | 0.070 | — | ok |
+| cycle time p50 / p90 | 76.0 / 141.6 d | 78.8 / 133.1 d | ok (−4% / +6%) |
+| paid / deleted (finished items) | 0.963 / 0.037 | 0.962 / 0.038 | ok (log 0.932 / 0.037 / 3.1% still open) |
+| open items (median) | 5,150 | 5,312 (10% of 53,123) | ok |
+| arrivals per day | 59.3 | 60.6 | ok |
+| stage visit p50 / p90 | order 9.4/32.1, goods receipt 8.8/46.2, invoice 30.3/90.2, payment block 34.9/97.1 d | 9.2/34.4, 8.3/48.1, 29.2/90.3, 33.0/97.2 d | close |
+| worker utilisation | 0.33 | — | |
+| queueing for a worker, p90 | create PO 24 h, goods receipt 43 h, invoice 39 h, payment block 51 h | — | |
+
+The validation script now scales count targets by `arrivals.scale` and takes `--warmup` / `--window`.
+The two "CHECK" rows of the script are the log's 3.1% items still open at its end (the simulation
+counts finished items only); relative to finished items the shares match.
 
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**

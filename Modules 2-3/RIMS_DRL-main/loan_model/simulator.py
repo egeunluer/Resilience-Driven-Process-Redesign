@@ -35,8 +35,9 @@ Recovery actions (Phase 6, parameters in the disruption config's "recovery" bloc
               retry.max_per_case times per case, then masked)
   reassign    missing documents: a caseworker chases the documents (no portal
               delay) and the case's calls go to the front of the queue
-  substitute  alternative channel (online-only offer / written contact); side
-              effects: later rework or a slower customer response
+  substitute  alternative channel (online-only offer / written contact) or an
+              alternative step (`replacement_item`); side effects: later rework or a
+              slower customer response
   escalate    a backup worker handles the step manually (see escalation_team)
 `allowed_actions(decision)` gives the mask (escalate only while a backup worker
 qualified for the step is on shift and free, retry only while the case has retries
@@ -215,6 +216,12 @@ class Simulator:
         self.arrival_log = deque(maxlen=24)         # (hour start, arrivals) of the last 24 hours
         self.env.process(self._calendar())
         self.env.process(self._arrivals())
+        # batch release (BPIC 2019's weekly payment run): due cases wait for the next run
+        self.release = self.sm.m.get('batch_release')
+        self.run_event = self.env.event()
+        if self.release:
+            self.run_rng = self._stream(7)
+            self.env.process(self._release_runs())
 
     # ------------------------------------------------------------- time helpers
     def local(self, t):
@@ -351,7 +358,7 @@ class Simulator:
             # demand spike: the rate of the hours that start during it (a factor of 1
             # leaves the draws, and so every other scenario, unchanged)
             factor = self.disruption.arrival_factor() if self.disruption is not None else 1.0
-            n = self.arr_rng.poisson(rates[slot] * factor)
+            n = self.arr_rng.poisson(rates[slot] * factor * self.sm.m['arrivals'].get('scale', 1.0))
             self.arrival_log.append((self.env.now, n))
             offsets = np.sort(self.arr_rng.uniform(0, 3600, n))
             t_hour = self.env.now
@@ -411,7 +418,7 @@ class Simulator:
         if timers:
             # the visit races against the timer (e.g. offer expiry): whichever ends first
             tm = timers[0]
-            body = self.env.process(self._visit_body(cid, st, tr))
+            body = self.env.process(self._visit_body(cid, st, tr, nxt))
             expiry = None
             if nxt != tm['target']:
                 delay = sample_quantiles(tm['delay'], rng)
@@ -429,7 +436,7 @@ class Simulator:
                         o.on_expiry(cid, self.env.now)
                     nxt = tm['target']
         else:
-            yield from self._visit_body(cid, st, tr)
+            yield from self._visit_body(cid, st, tr, nxt)
         if self.disruption is not None:
             # a blocked transition (e.g. offer dispatch down) holds the case in this stage
             if self.disruption.blocks_transition(stage, nxt):
@@ -441,7 +448,42 @@ class Simulator:
             c['offers'] += int(sample_choice(self.sm.m['offers']['per_case'], rng))
         return nxt
 
-    def _visit_body(self, cid, st, tr):
+    def _release_runs(self):
+        """The mined run schedule: in a week with a run (week_run_share), runs_per_week
+        runs on distinct weekdays (weekday_shares), each at a mined time of day; each run
+        releases every case waiting for it."""
+        b, rng = self.release, self.run_rng
+        week0 = self.local(0).replace(hour=0, minute=0, second=0, microsecond=0)
+        week0 -= timedelta(days=week0.weekday())
+        while True:
+            times = []
+            if rng.random() < b['week_run_share']:
+                n = int(sample_choice(b['runs_per_week'], rng))
+                days = set()
+                for _ in range(10 * n):
+                    if len(days) == n:
+                        break
+                    days.add(int(sample_choice(b['weekday_shares'], rng)))
+                times = sorted(week0 + timedelta(days=d, seconds=sample_quantiles(b['time_of_day_s'], rng))
+                               for d in days)
+            for t in times:
+                wait = self._seconds_until(t)
+                if wait >= 0:
+                    yield self.env.timeout(wait)
+                    ev, self.run_event = self.run_event, self.env.event()
+                    ev.succeed()
+            week0 += timedelta(days=7)
+            yield self.env.timeout(max(0.0, self._seconds_until(week0)))
+
+    def _released(self, nxt, tr, rng):
+        """Due lag (s) if this visit ends with a batch release (payment run), else None.
+        Both draws are made in any case, so the stream's use does not depend on it."""
+        if not (self.release and nxt == self.release['target'] and tr.get('due_lag')):
+            return None
+        u, lag = rng.random(), sample_quantiles(tr['due_lag'], rng)
+        return lag if u < tr.get('run_share', 1.0) else None
+
+    def _visit_body(self, cid, st, tr, nxt=None):
         try:
             extra = self.cases[cid].pop('extra_wait', None)
             if extra:
@@ -451,11 +493,17 @@ class Simulator:
             if rework:
                 # substitute side effect: the step has to be redone in this stage
                 yield self.env.timeout(rework)
-                if st['work_item']:
+                # a stage without staff work (Consulta's submission) has nothing to redo
+                if st['work_item'] and self.sm.m['work_items'].get(st['work_item'], {}).get('session_duration'):
                     yield from self._session(cid, st['work_item'])
             rng = self.cases[cid]['rng']
             k = int(sample_choice(tr['n_sessions'], rng))
+            due = self._released(nxt, tr, rng)
             if k == 0:
+                if due is not None:
+                    yield from self._pause(cid, due)
+                    yield self.run_event
+                    return
                 q = tr.get('visit_duration_no_session') or tr['visit_duration']
                 yield from self._pause(cid, sample_quantiles(q, rng))
                 return
@@ -464,6 +512,11 @@ class Simulator:
                 yield from self._session(cid, st['work_item'])
                 if i < k - 1:
                     yield from self._pause(cid, self._wait_s(tr, 'gap', rng))
+            if due is not None:
+                # payable after the due lag, paid by the next payment run
+                yield from self._pause(cid, due)
+                yield self.run_event
+                return
             yield from self._pause(cid, self._wait_s(tr, 'tail', rng))
         except simpy.Interrupt:
             return
@@ -637,6 +690,10 @@ class Simulator:
             rework_s = 3600 * float(arng.uniform(*spec['rework_delay_h']['uniform'])) if 'rework_delay_h' in spec else 0.0
             if extra:
                 yield self.env.timeout(extra)
+            if 'replacement_item' in spec:
+                # the step is replaced by another one done by its own workers (Consulta:
+                # group recognition instead of the course-by-course evaluation)
+                yield from self._session(cid, spec['replacement_item'])
             if rework:
                 self.cases[cid]['rework_delay'] = rework_s
             return self.BYPASS

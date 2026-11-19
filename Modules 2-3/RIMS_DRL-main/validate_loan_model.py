@@ -53,7 +53,7 @@ def collect(sims, days):
             timers += bool(c.get('timers'))
             for (s, t0), (_, t1) in zip(c['stages'], c['stages'][1:]):
                 stage_dur.setdefault(s, []).append(t1 - t0)
-        grid = np.arange(60 * 86400 + 43200, days * 86400, 86400)
+        grid = np.arange(max(60, WARMUP) * 86400 + 43200, days * 86400, 86400)
         arr = np.array([c['arrival'] for c in sim.cases.values()])
         end = np.array([c['end'] if c['end'] is not None else np.inf for c in sim.cases.values()])
         open_cases += [int(((arr <= g) & (end > g)).sum()) for g in grid]
@@ -83,12 +83,17 @@ def main():
     ap.add_argument('--days', type=int, default=240)
     ap.add_argument('--out', help='write the comparison as JSON')
     ap.add_argument('--pool-k', type=int, help='constrained pool: k most active workers per work item')
+    ap.add_argument('--warmup', type=int, default=WARMUP, help='days before the measured arrivals (BPIC 2019: 150)')
+    ap.add_argument('--window', type=int, default=WINDOW, help='days of measured arrivals')
     args = ap.parse_args()
+    globals().update(WARMUP=args.warmup, WINDOW=args.window)
     sm = StageModel(args.model)
     if args.pool_k:
         sm = StageModel(sm.m, pool=top_k_pool(sm.m, args.pool_k))
         print(f'constrained pool: {len(sm.workers)} workers (top {args.pool_k} per work item)')
     vt = sm.m['validation_targets']
+    # counts scale with the simulated share of the volume (BPIC 2019: 10%)
+    scale = sm.m['arrivals'].get('scale', 1.0)
     sims, walls = [], []
     for s in args.seeds:
         sim, w = run_one(sm, s, args.days)
@@ -120,11 +125,13 @@ def main():
     for k in ('1', '2', '3'):
         row(f'offers per case = {k} (cases with offers)', r['offers'][k] / with_off if with_off else 0,
             vt['offers_per_case'].get(k, 0) / max(1e-9, 1 - vt['offers_per_case'].get('0', 0)), '{:.3f}')
-    row('open cases median', float(np.median(r['open_cases'])), vt['open_cases']['median'], '{:.0f}',
-        ok=abs(np.median(r['open_cases']) - vt['open_cases']['median']) <= 0.1 * vt['open_cases']['median'])
-    row('open cases p10', pct(r['open_cases'], 10), vt['open_cases']['p10'], '{:.0f}')
-    row('open cases p90', pct(r['open_cases'], 90), vt['open_cases']['p90'], '{:.0f}')
-    row('arrivals per day', r['arrivals'], vt['arrivals_per_day'], '{:.1f}', ok=abs(r['arrivals'] - vt['arrivals_per_day']) <= 0.05 * vt['arrivals_per_day'])
+    oc = {k: v * scale for k, v in vt['open_cases'].items()}
+    row('open cases median', float(np.median(r['open_cases'])), oc['median'], '{:.0f}',
+        ok=abs(np.median(r['open_cases']) - oc['median']) <= 0.1 * oc['median'])
+    row('open cases p10', pct(r['open_cases'], 10), oc['p10'], '{:.0f}')
+    row('open cases p90', pct(r['open_cases'], 90), oc['p90'], '{:.0f}')
+    apd = vt['arrivals_per_day'] * scale
+    row('arrivals per day', r['arrivals'], apd, '{:.1f}', ok=abs(r['arrivals'] - apd) <= 0.05 * apd)
     for s, q in vt['stage_visit_duration'].items():
         if q and s in r['stage_dur']:
             row(f'{s} visit p50 (days)', pct(r['stage_dur'][s], 50) / D, q[50] / D, '{:.2f}')

@@ -141,6 +141,20 @@ def mine(m, ev, cases):
     online_only = Counter()
     cycle, outcome, rounds, incomplete_cases = [], Counter(), Counter(), 0
     case_span = []
+    # batch release (BPIC 2019's weekly payment run): days on which at least
+    # min_items_per_day cases reach the target milestone. runs: (first, last) posting
+    # time of each run day; a case is released by a run if it is paid on a run day
+    rel = m.get('batch_release')
+    runs, run_day, release_n = [], {}, Counter()
+    if rel:
+        paid = ev[ev['activity'] == rel['activity']]
+        day = paid['time'].dt.tz_convert(tz).dt.date
+        cnt = day.value_counts()
+        g = paid.groupby(day)['t']
+        for d in sorted(cnt[cnt >= rel['min_items_per_day']].index):
+            runs.append((float(g.get_group(d).min()), float(g.get_group(d).max())))
+            run_day[d] = len(runs) - 1
+        rel_rng = np.random.default_rng(0)
 
     for cid, g in ev.groupby('case', sort=False):
         acts, lcs, ress, ts = g['activity'].tolist(), g['lifecycle'].tolist(), g['resource'].tolist(), g['t'].tolist()
@@ -241,6 +255,17 @@ def mine(m, ev, cases):
                     wpairs[s][n]['gap'].append((a1, max(a1, b0)))
             else:
                 tr_['visit_duration_no_session'].append(vis['exit'] - vis['entry'])
+            if rel and n == rel['target']:
+                # due lag: from the end of the case's last work to the moment it became
+                # payable. Released by run R_k and not by R_(k-1), it became due in
+                # (max(ready, R_(k-1)), R_k]: drawn uniformly there (interval-censored)
+                release_n[(s, 'all')] += 1
+                k = run_day.get((t0_abs + pd.Timedelta(seconds=vis['exit'])).tz_convert(tz).date())
+                if k is not None:
+                    ready = sess[-1][1] if sess else vis['entry']
+                    lo = max(ready, runs[k - 1][1]) if k > 0 else ready
+                    tr_['due_lag'].append(max(0.0, lo + rel_rng.random() * (vis['exit'] - lo) - ready))
+                    release_n[(s, 'run')] += 1
             # timers
             for tm in timers:
                 if s == tm['stage'] and n == tm['target']:
@@ -291,7 +316,9 @@ def mine(m, ev, cases):
             'transitions': {
                 n: {'n': len(f['visit_duration']), 'n_sessions': shares(n_sess[s][n]),
                     **{k: quantiles(v, nq) for k, v in f.items()},
-                    **{k + '_w': quantiles(working_durations(v), nq) for k, v in wpairs[s][n].items()}}
+                    **{k + '_w': quantiles(working_durations(v), nq) for k, v in wpairs[s][n].items()},
+                    **({'run_share': round(release_n[(s, 'run')] / max(1, release_n[(s, 'all')]), 4)}
+                       if rel and n == rel['target'] else {})}
                 for n, f in trans[s].items()},
         }
     work_items = {}
@@ -340,6 +367,7 @@ def mine(m, ev, cases):
         'workerless_items': m.get('workerless_items', []),
         'workers': workers,
         'calendar': calendar,
+        'batch_release': release_schedule(rel, runs, t0_abs, tz) if rel else None,
         'timers': {tm['name']: {'stage': tm['stage'], 'target': tm['target'], 'anchor_marker': tm['anchor_marker'],
                                 'anchor': tm['anchor'], 'delay': quantiles(timer_delays[tm['name']], nq),
                                 'n': len(timer_delays[tm['name']]),
@@ -364,6 +392,21 @@ def mine(m, ev, cases):
     return model
 
 
+def release_schedule(rel, runs, t0_abs, tz):
+    """When the batch releases happen: per week, the share of weeks with a run and the
+    number of runs; per run, the weekday and the local time of day (quantiles)."""
+    loc = pd.DatetimeIndex([t0_abs + pd.Timedelta(seconds=(a + b) / 2) for a, b in runs]).tz_convert(tz)
+    weeks = pd.Series(loc.strftime('%G-%V'))
+    n_weeks = int(round((loc.max() - loc.min()).days / 7)) + 1
+    tod = loc.hour * 3600 + loc.minute * 60 + loc.second
+    return {'activity': rel['activity'], 'target': rel['target'], 'min_items_per_day': rel['min_items_per_day'],
+            'n_runs': len(runs), 'weeks_spanned': n_weeks,
+            'week_run_share': round(weeks.nunique() / n_weeks, 4),
+            'runs_per_week': shares(Counter(weeks.value_counts().tolist())),
+            'weekday_shares': shares(Counter(int(d) for d in loc.weekday)),
+            'time_of_day_s': quantiles(np.asarray(tod), 101)}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--map', required=True, help='activity map JSON')
@@ -376,9 +419,25 @@ def main():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(args.map), '..', '..'))
     log = args.log or os.path.join(repo_root, m['log_path'])
     print(f'Loading {log} ...', flush=True)
-    ev, cases = load_log(log, m['case_attributes'], m.get('wide_start'))
+    if log.endswith('.parquet'):
+        # an event table prepared beforehand (BPIC 2019: estimated start events)
+        ev = pd.read_parquet(log)
+        ev['time'] = pd.to_datetime(ev['time'], utc=True)
+        ev = ev.sort_values(['case', 'time'], kind='stable').reset_index(drop=True)
+        cases = pd.DataFrame({'case': ev['case'].unique()})
+    else:
+        ev, cases = load_log(log, m['case_attributes'], m.get('wide_start'))
     print(f'{ev["case"].nunique()} cases, {len(ev)} events', flush=True)
     model = mine(m, ev, cases)
+    if m.get('validation_overrides_file'):
+        # measured outside the mined cases (BPIC 2019: arrivals and open items over all
+        # items, while waits and routing come from items that had time to finish)
+        with open(os.path.join(repo_root, m['validation_overrides_file'])) as f:
+            ov = json.load(f)
+        model['arrivals'] = ov.get('arrivals', model['arrivals'])
+        model['validation_targets'].update(ov.get('validation_targets', {}))
+    # simulate a fraction of the real volume (BPIC 2019: 10%), same flow and waits
+    model['arrivals']['scale'] = m.get('simulation_scale', 1.0)
     with open(args.out, 'w') as f:
         json.dump(model, f, indent=1)
     vt = model['validation_targets']
