@@ -21,23 +21,22 @@ paired, every policy on the same episodes, with 95% intervals.
 | Code | commit `088871d` (with the shadow prices restored to the values above) |
 | Date | 2026-11-06 |
 | Evaluation score | 0.36 (24 episodes, seeds 1000+) |
-| Benchmark | 16 episodes per shock type, seeds 200–215, deterministic policy |
+| Benchmark | 64 episodes per shock type, seeds 200–263, deterministic policy (seeds 200–215 from the first benchmark, 216–263 added on 2026-11-20; the first 16 reproduce exactly with the current code) |
 
 ### Overall (D1–D3)
 
 | Policy | Objective | Loss ratio | Cost ratio | vs do-nothing |
 |---|---|---|---|---|
 | do-nothing | 1.000 | 1.000 | 0.000 | — |
-| always retry | 0.758 | 0.742 | 0.016 | −0.242 ± 0.109 |
-| always reassign | 0.923 | 0.866 | 0.057 | −0.077 ± 0.045 |
-| always substitute | 0.772 | 0.665 | 0.108 | −0.228 ± 0.143 |
-| always escalate | 0.872 | 0.846 | 0.026 | −0.128 ± 0.050 |
-| greedy | 0.785 | 0.768 | 0.016 | −0.215 ± 0.068 |
-| rule (urgent < 7 d) | 0.371 | 0.302 | 0.068 | −0.629 ± 0.168 |
-| rule, best threshold (1 d) | 0.359 | 0.304 | 0.055 | −0.641 ± 0.163 |
-| **DRL agent** | **0.303** | **0.229** | 0.074 | **−0.697 ± 0.151** |
+| always retry | 0.770 | 0.754 | 0.016 | −0.230 ± 0.052 |
+| always reassign | 0.916 | 0.858 | 0.058 | −0.084 ± 0.023 |
+| always substitute | 0.784 | 0.676 | 0.109 | −0.216 ± 0.070 |
+| always escalate | 0.880 | 0.853 | 0.027 | −0.120 ± 0.024 |
+| greedy | 0.771 | 0.754 | 0.017 | −0.229 ± 0.035 |
+| rule (urgent < 7 d) | 0.379 | 0.309 | 0.070 | −0.621 ± 0.082 |
+| **DRL agent** | 0.317 | 0.243 | 0.074 | −0.683 ± 0.074 |
 
-Best baseline in each shock type, combined: 0.357.
+Best baseline in each shock type, combined: 0.378 (D1 always substitute, D2 rule, D3 rule).
 
 ### Per shock type
 
@@ -48,12 +47,11 @@ Best baseline in each shock type, combined: 0.357.
 | do-nothing | 1.000 | 1.000 | 0.000 | — |
 | always retry | 1.000 | 1.000 | 0.000 | +0.000 ± 0.000 |
 | always reassign | 1.000 | 1.000 | 0.000 | +0.000 ± 0.000 |
-| always substitute | 0.242 | 0.136 | 0.106 | −0.758 ± 0.225 |
-| always escalate | 0.919 | 0.900 | 0.019 | −0.081 ± 0.037 |
-| greedy | 0.572 | 0.536 | 0.037 | −0.428 ± 0.117 |
-| rule (7 d) | 0.257 | 0.145 | 0.112 | −0.743 ± 0.228 |
-| rule (1 d) | 0.237 | 0.145 | 0.092 | −0.763 ± 0.216 |
-| **DRL agent** | **0.226** | 0.153 | **0.073** | **−0.774 ± 0.207** |
+| always substitute | 0.251 | 0.143 | 0.108 | −0.749 ± 0.109 |
+| always escalate | 0.929 | 0.911 | 0.018 | −0.071 ± 0.017 |
+| greedy | 0.577 | 0.542 | 0.035 | −0.423 ± 0.064 |
+| rule (urgent < 7 d) | 0.255 | 0.141 | 0.114 | −0.745 ± 0.109 |
+| **DRL agent** | 0.242 | 0.171 | 0.071 | −0.758 ± 0.103 |
 
 **D2: telephony outage**
 
@@ -62,39 +60,51 @@ Best baseline in each shock type, combined: 0.357.
 | do-nothing | 1.000 | 1.000 | 0.000 | — |
 | always retry | 1.000 | 1.000 | 0.000 | +0.000 ± 0.000 |
 | always reassign | 1.000 | 1.000 | 0.000 | +0.000 ± 0.000 |
-| always substitute | 1.075 | 0.858 | 0.217 | +0.075 ± 0.178 |
-| always escalate | 0.980 | 0.969 | 0.011 | −0.020 ± 0.024 |
-| greedy | 0.993 | 0.991 | 0.002 | −0.007 ± 0.028 |
-| rule (7 d) | 0.965 | 0.953 | 0.013 | −0.035 ± 0.040 |
-| rule (1 d) | 0.970 | 0.961 | 0.009 | −0.030 ± 0.040 |
-| **DRL agent** | **0.792** | **0.714** | 0.078 | **−0.208 ± 0.125** |
+| always substitute | 1.102 | 0.884 | 0.218 | +0.102 ± 0.077 |
+| always escalate | 0.984 | 0.973 | 0.011 | −0.016 ± 0.014 |
+| greedy | 0.984 | 0.982 | 0.002 | −0.016 ± 0.013 |
+| rule (urgent < 7 d) | 0.976 | 0.962 | 0.013 | −0.024 ± 0.018 |
+| **DRL agent** | 0.819 | 0.741 | 0.077 | −0.181 ± 0.051 |
 
 **D3: missing-documents surge**
 
 | Policy | Objective | Loss ratio | Cost ratio | vs do-nothing |
 |---|---|---|---|---|
 | do-nothing | 1.000 | 1.000 | 0.000 | — |
-| always retry | 0.273 | 0.225 | 0.048 | −0.727 ± 0.147 |
-| always reassign | 0.769 | 0.597 | 0.172 | −0.231 ± 0.101 |
+| always retry | 0.310 | 0.262 | 0.049 | −0.690 ± 0.072 |
+| always reassign | 0.747 | 0.573 | 0.174 | −0.253 ± 0.049 |
 | always substitute | 1.000 | 1.000 | 0.000 | +0.000 ± 0.000 |
-| always escalate | 0.718 | 0.670 | 0.049 | −0.282 ± 0.108 |
-| greedy | 0.789 | 0.778 | 0.011 | −0.211 ± 0.081 |
-| rule (7 d) | −0.111 | −0.191 | 0.080 | −1.111 ± 0.241 |
-| rule (1 d) | **−0.130** | −0.195 | 0.065 | −1.130 ± 0.204 |
-| **DRL agent** | −0.108 | −0.179 | 0.072 | −1.108 ± 0.221 |
+| always escalate | 0.726 | 0.675 | 0.051 | −0.274 ± 0.051 |
+| greedy | 0.752 | 0.740 | 0.012 | −0.248 ± 0.041 |
+| rule (urgent < 7 d) | −0.093 | −0.176 | 0.083 | −1.093 ± 0.112 |
+| **DRL agent** | −0.109 | −0.182 | 0.073 | −1.109 ± 0.102 |
 
 ### DRL agent minus each baseline (same episodes; negative = agent better)
 
 | Baseline | D1 | D2 | D3 | Overall |
 |---|---|---|---|---|
-| do-nothing | **−0.774 ± 0.207** | **−0.208 ± 0.125** | **−1.108 ± 0.221** | **−0.697 ± 0.151** |
-| always retry | **−0.774 ± 0.207** | **−0.208 ± 0.125** | **−0.381 ± 0.112** | **−0.454 ± 0.110** |
-| always substitute | −0.016 ± 0.032 | **−0.283 ± 0.091** | **−1.108 ± 0.221** | **−0.469 ± 0.154** |
-| greedy | **−0.347 ± 0.106** | **−0.201 ± 0.124** | **−0.897 ± 0.188** | **−0.481 ± 0.118** |
-| rule (7 d) | −0.031 ± 0.038 | **−0.173 ± 0.095** | +0.003 ± 0.100 | **−0.067 ± 0.051** |
-| rule (1 d, best tuned) | −0.011 ± 0.016 | **−0.177 ± 0.100** | +0.022 ± 0.076 | **−0.055 ± 0.048** |
+| do-nothing | **−0.758 ± 0.103** | **−0.181 ± 0.051** | **−1.109 ± 0.102** | **−0.683 ± 0.074** |
+| always retry | **−0.758 ± 0.103** | **−0.181 ± 0.051** | **−0.419 ± 0.056** | **−0.453 ± 0.054** |
+| always reassign | **−0.758 ± 0.103** | **−0.181 ± 0.051** | **−0.856 ± 0.103** | **−0.598 ± 0.066** |
+| always substitute | −0.009 ± 0.015 | **−0.284 ± 0.042** | **−1.109 ± 0.102** | **−0.467 ± 0.076** |
+| always escalate | **−0.687 ± 0.093** | **−0.165 ± 0.045** | **−0.835 ± 0.088** | **−0.562 ± 0.061** |
+| greedy | **−0.335 ± 0.046** | **−0.165 ± 0.049** | **−0.861 ± 0.092** | **−0.454 ± 0.057** |
+| rule (7 d) | −0.013 ± 0.015 | **−0.157 ± 0.039** | −0.016 ± 0.052 | **−0.062 ± 0.024** |
 
-Bold: the 95% interval excludes 0.
+Bold: the 95% interval excludes 0. Agent vs rule, paired t-test / Wilcoxon: D1 p = 0.09 / 0.12, D2 p = 6e-11 / 2e-09, D3 p = 0.55 / 0.72, overall p = 1e-06 / 2e-06.
+
+### Action mix per episode (agent vs rule)
+
+| Shock | Rule | DRL agent |
+|---|---|---|
+| D1 | substitute 312.4, escalate 37.8 | do-nothing 380.7, substitute 221.0, escalate 6.4 |
+| D2 | do-nothing 818.9, substitute 30.1, escalate 19.5 | do-nothing 599.1, substitute 301.3, escalate 28.8 |
+| D3 | retry 228.6, escalate 28.5, reassign 24.7 | retry 250.4, escalate 28.0 |
+
+### Notes
+- **16 → 64 episodes.** Overall objective agent 0.303 → 0.317, rule 0.371 → 0.379; agent minus rule overall −0.067 ± 0.051 → −0.062 ± 0.024. The conclusions of the 16-episode benchmark hold; the D2 advantage is the source of the overall gain.
+- **Rule threshold 1 d** (best tuned on 16 episodes: overall 0.359, agent minus rule −0.055 ± 0.048) was not rerun on the 48 added seeds.
+- Results: `tmp_loan_training/bpic2017_bench_s200x64.json` (merged), `bpic2017_bench_s216x48.json/.log` (added seeds).
 
 ---
 
