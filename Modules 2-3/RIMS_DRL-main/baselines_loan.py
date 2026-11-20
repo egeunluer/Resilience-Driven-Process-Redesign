@@ -47,11 +47,21 @@ class Policy:
         self.cfg, self.cal, self.sm = cfg, cal, sm
         self.rc = cfg['recovery']
         self.deadline = cal['deadlines_s']
+        # routing-surge failure types (missing documents in the loan logs, invoice
+        # mismatch in BPIC 2019): handled like the documents loop
+        self.surge = {s['failure_type']: s for s in cfg['scenarios'].values() if s['mechanism'] == 'routing_surge'}
+        pt = sm.m.get('payment_terms')
+        self.due_grace = pt['grace_s'] if pt else 0.0
 
     def slack(self, sim, d):
+        """Time to the case's deadline: its stage deadline, or its payment due date +
+        grace when earlier (BPIC 2019)."""
         c = sim.cases[d.cid]
         dl = self.deadline.get(d.stage)
-        return c['arrival'] + dl - sim.env.now if dl else np.inf
+        t = c['arrival'] + dl if dl else np.inf
+        if 'due' in c:
+            t = min(t, c['due'] + self.due_grace)
+        return t - sim.env.now
 
     def pick(self, sim, d, prefs):
         """First allowed action of prefs, else do_nothing."""
@@ -80,8 +90,18 @@ class Greedy(Policy):
             self.lengths[name] = np.array([sample_hours(spec['levels']['2']['duration_h'], rng)
                                            for _ in range(20000)]) * H
         sd = self.sm.m['validation_targets']['stage_visit_duration']
-        self.loop_s = float(sd['incomplete'][50] + sd['validation'][50])
+        # the loop a surge case is routed into and back (incomplete + validation in the
+        # loan logs, payment block + invoice in BPIC 2019)
+        self.loop_s = {ft: float(sd[s['exit']][50] + sd[s['stage']][50]) for ft, s in self.surge.items()}
         self.visit_s = {s: float(q[50]) for s, q in sd.items()}
+        # a blocked transition into a batch-released end (BPIC 2019's payment run): after
+        # the restore the case still waits for the next run, half a week on average
+        rel = self.sm.m.get('batch_release')
+        self.run_wait = {}
+        for s in self.cfg['scenarios'].values():
+            tr = s.get('blocks', {}).get('transitions', [])
+            if rel and any(n == rel['target'] for _, n in tr):
+                self.run_wait[s['failure_type']] = 3.5 * DAY
 
     def remaining(self, sim):
         d = sim.disruption
@@ -96,13 +116,14 @@ class Greedy(Policy):
         rc, acts = self.rc, sim.allowed_actions(d)
         mean = lambda spec: float(np.mean(spec['uniform']))
         esc = mean(rc['escalate']['handling_working_h']) * H / rc['escalate']['success_p']
-        if d.cause == 'documents_missing':
+        if d.cause in self.surge:
+            loop = self.loop_s[d.cause]
             up = sim.disruption.params.get('upload_delay_h')
-            full = self.loop_s + (mean(up) * H if up else 0.0)
+            full = loop + (mean(up) * H if up else 0.0)
             est = {'do_nothing': full, 'retry': (1 - rc['retry']['documents_success_p']) * full,
-                   'reassign': self.loop_s, 'escalate': (1 - rc['escalate']['success_p']) * full + esc}
+                   'reassign': loop, 'escalate': (1 - rc['escalate']['success_p']) * full + esc}
         else:
-            rem = self.remaining(sim)
+            rem = self.remaining(sim) + self.run_wait.get(d.cause, 0.0)
             sub = rc['substitute'].get(d.cause, {})
             est = {'do_nothing': rem, 'retry': max(rc['retry']['delay_working_h'] * H, rem), 'escalate': esc,
                    'substitute': (mean(sub['extra_delay_h']) * H if 'extra_delay_h' in sub else 0.0)
@@ -128,7 +149,7 @@ class Rule(Policy):
 
     def __call__(self, sim, d):
         urgent = self.slack(sim, d) < self.urgent
-        if d.cause == 'documents_missing':
+        if d.cause in self.surge:
             return self.pick(sim, d, ['escalate', 'reassign'] if urgent else ['retry'])
         if d.failure_type != d.cause:            # SLA-risk alert: deadline close
             return self.pick(sim, d, ['escalate', 'substitute'])

@@ -47,5 +47,59 @@
  "q_daily_p1": 0.7996665126504882,
  "baseline_loss_s_per_day": 13047.250355577646,
  "baseline_delay_expiries_per_day": 0.0,
- "loss_base_by_scenario": {}
+ "loss_base_by_scenario": {
+  "D1_payment_run_outage:2": {
+   "loss_base": 11169.874981374916,
+   "loss_sd": 10793.245282632412,
+   "loss_normal": 1154672.0511524982,
+   "loss_normal_sd": 32567.465545733616,
+   "n_decisions": 266.125,
+   "n_seeds": 64,
+   "time_to_recover_d": 5.198567708333334
+  },
+  "D2_vendor_channel_outage:2": {
+   "loss_base": 1043.4517791979742,
+   "loss_sd": 974.1163215086282,
+   "loss_normal": 1154672.0511524982,
+   "loss_normal_sd": 32567.465545733616,
+   "n_decisions": 211.4375,
+   "n_seeds": 64,
+   "time_to_recover_d": 4.050130208333334
+  },
+  "D3_mismatch_surge:2": {
+   "loss_base": 1940.106660896461,
+   "loss_sd": 1051.1172722881286,
+   "loss_normal": 1154672.0511524982,
+   "loss_normal_sd": 32567.465545733616,
+   "n_decisions": 43.328125,
+   "n_seeds": 64,
+   "time_to_recover_d": 4.050130208333334
+  },
+  "D1_payment_run_outage:2:cycle": {
+   "loss_base": 11169.874981374916,
+   "loss_normal": 1154672.0511524982,
+   "n_decisions": 266.125,
+   "cells": [
+    "D1_payment_run_outage:2"
+   ]
+  },
+  "D2_vendor_channel_outage:2:cycle": {
+   "loss_base": 1043.4517791979742,
+   "loss_normal": 1154672.0511524982,
+   "n_decisions": 211.4375,
+   "cells": [
+    "D2_vendor_channel_outage:2"
+   ]
+  },
+  "D3_mismatch_surge:2:cycle": {
+   "loss_base": 1940.106660896461,
+   "loss_normal": 1154672.0511524982,
+   "n_decisions": 43.328125,
+   "cells": [
+    "D3_mismatch_surge:2"
+   ]
+  }
+ },
+ "loss_base_common": false,
+ "loss_base_definition": "Loss = integral of (1 - Q) dt in seconds; loss_base: mean extra Loss of the do-nothing episode over its undisrupted twin (same seed, zero-length disruption); loss_normal: the twin's mean Loss; n_decisions per episode; seeds 0-63, warm-up/horizon of loan_model.episode"
 }

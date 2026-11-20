@@ -1319,6 +1319,40 @@ observations:
   payment due date + grace (BPIC 2019; the offer expiry in BPIC 2017) → −1 when overdue, 1 when more
   than a month away (75% of decisions).
 
+**Phase 8 (calibration and baselines), 2026-11-20.** `baselines_loan.py` generalised (loan logs
+unchanged): the slack is the earlier of the stage deadline and the payment due date + grace; any
+routing-surge shock is handled like the documents loop (its loop = the surge stage + its exit stage);
+greedy adds half a week for a blocked transition into the payment run (the next run after the restore).
+
+Loss_base and N, 64 seeds (`calibrate_loan_resilience.py --scenarios --warmup 150`,
+`tmp_loan_training/bpic2019_calibration_scenarios_64.log`): D1 0.129 Q-days (sd 0.125, N 266), D2 0.012
+(sd 0.011, N 211), D3 0.023 (sd 0.012, N 43); Loss_normal 13.36 Q-days per 90 d.
+
+Baselines, 64 episodes per shock, seeds 200–263 (`tmp_loan_training/bpic2019_bench_baselines_s200x64.*`),
+objective (lower is better, do-nothing = 1):
+
+| Policy | D1 (own base) | D2 (own) | D3 (own) | Overall (own) | Overall (common base 0.0546) |
+|---|---|---|---|---|---|
+| do-nothing | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| always retry | 1.000 | 1.000 | 1.382 | 1.127 | 1.062 |
+| always reassign | 1.000 | 1.000 | **0.701 ± 0.056** | 0.900 | 0.989 |
+| always substitute | 0.017 ± 0.318 | 0.971 ± 0.106 | 1.000 | 0.662 | 0.198 ± 0.269 |
+| always escalate | 0.984 | 0.822 ± 0.068 | 1.092 | 0.966 | 1.001 |
+| greedy | 0.545 | 0.974 | 1.249 | 0.922 | 0.638 |
+| rule (urgent < 7 d) | **−0.014 ± 0.325** | **0.478 ± 0.173** | 1.304 ± 0.099 | **0.589 ± 0.148** | 0.158 ± 0.278 |
+| rule, 1 / 2 / 4 / 14 d | 0.327 / 0.204 / 0.036 / −0.013 | 0.52 / 0.52 / 0.50 / 0.47 | 1.34 / 1.33 / 1.32 / 1.31 | 0.728 / 0.683 / 0.619 / 0.588 | 0.473 / 0.369 / 0.221 / 0.162 |
+
+- The rule is the strongest baseline in D1 (escalate/substitute when urgent ≈ manual payment) and D2,
+  but in D3 it is *worse* than doing nothing: its non-urgent action, retry (automatic re-match), costs time
+  and rarely helps here (always retry 1.382), while reassign (front of the block queue) helps (0.701).
+  In BPIC 2017 retry was the best D3 action; the agent has to find the difference.
+- Best baseline per shock combined: (−0.014 + 0.471 + 0.701) / 3 ≈ 0.386 against the rule's 0.589: room
+  for a policy that reads the shock and the case.
+- Own vs common Loss_base: with own bases the scores per shock are sane (no blow-ups; D1 ± 0.33, D2 ± 0.17,
+  D3 ± 0.06). With a common base D1 dominates the overall score (down to −1.6 ± 0.8) and D2/D3 shrink to
+  ≈ 1 ± 0.04, so the overall score is mostly D1's noise. (In BPI 2012 the common base was needed because
+  the small shocks' own scores blew up, down to −2.6; here they do not.)
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);

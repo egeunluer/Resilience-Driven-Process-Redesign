@@ -130,6 +130,30 @@ possible.
   | incomplete | 35.5 d |
 
 - A case is **on track** while its age is at most D_k of the stage it is in.
+- **Case deadline (where the log has a real external deadline).** Some processes have a
+  deadline that is set outside the organisation and does not move when the process is
+  delayed. When the log contains it (or allows it to be mined), a case is on track only
+  while it is within **both** its stage deadline and its case deadline:
+  - **BPIC 2019 (purchase-to-pay):** the **payment due date** = the supplier's invoice
+    date (`Vendor creates invoice`) + the payment term. The log has no due date, only
+    the weekly payment run that paid the item; an item that was ready before run
+    R_(k−1) but was paid only in run R_k became due somewhere in (R_(k−1), R_k], so its
+    term is mined interval-censored (uniform in that interval, minus its invoice date).
+    Terms p10 / p50 / p90 = 28 / 61 / 103 days. An item is late once it is still unpaid
+    7 days after its due date, i.e. after the first weekly run that should have paid it.
+    In the simulator, each item draws its invoice date and due date at arrival from its
+    own random stream, so disruptions and recovery actions never move them and the
+    do-nothing twin has the same ones.
+  - **Why it is needed there:** BPIC 2019's stage deadlines are 34–136 days. A shock of
+    3–5 days delays items by days to a week and almost never crosses them (extra Loss
+    ≈ 0, and holding on-track items open even lowered it). The real harm of a
+    purchase-to-pay disruption is paying after the due date (late-payment interest,
+    lost discounts, suppliers on hold); with the due date, the same 72–120 h shocks do
+    clear harm, in the right direction from the start.
+  - **BPIC 2017 / BPI 2012:** no case deadline; their 30-day offer expiry is a real
+    external timer already in the stage model (an expired case is cancelled and keeps
+    being charged as off track, §5.2), and their stage deadlines are short enough
+    (1–36 days) for 72–120 h shocks to cross them.
 - **Q(t)** = the share of open cases that are on track. It is a system-level service
   level in [0, 1]. Normal operation runs at about 0.90; a shock pushes it down.
 
@@ -153,11 +177,13 @@ Loss = ∫ (1 − Q(t)) dt over the 50 days after the shock's onset.
 - action counts and action cost.
 
 ### 3.4 Episodes
-- **Warm-up:** 40 simulated days, so the process is in its normal state.
+- **Warm-up:** 40 simulated days, so the process is in its normal state (BPIC 2019:
+  150 days, its cycle times are months; set per log in the disruption config).
 - **Onset:** the shock starts at a random moment of working time in the following
   week.
 - **Horizon:** 50 days after the onset, fixed. Delays often turn into missed deadlines
-  only weeks later; most of a D3 shock's harm arrives at days 25–45.
+  only weeks later; most of a D3 shock's harm arrives at days 25–45. BPIC 2019: 90 days
+  (about 90% of its D2/D3 harm by day 150 is counted).
 
 ---
 
@@ -290,7 +316,7 @@ Loss. It depends on the policy that uses the workers (see the re-measurement abo
   last 24 h; work waiting for a worker.
 - **Process state:** Q; 24-hour rolling Q.
 - **The case:** its stage (one-hot); slack to its stage deadline; age; time to its
-  offer expiry; attempts so far; retries left; visit number; offers; fraud flag; demand
+  external deadline (offer expiry in BPIC 2017, payment due date + 7 days in BPIC 2019); attempts so far; retries left; visit number; offers; fraud flag; demand
   spike cohort flag.
 
 The shock's remaining length is hidden.
