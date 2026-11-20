@@ -87,8 +87,8 @@ class LoanEnv(Env):
     metadata = {'render_modes': []}
 
     def __init__(self, stage_model, disruptions, calibration, cycle, w=1.0, norm=None,
-                 reward='global', beta=0.0, window_h=None, twin=True, shadow=True, warmup_days=WARMUP_DAYS,
-                 horizon_days=HORIZON_DAYS):
+                 reward='global', beta=0.0, window_h=None, twin=True, shadow=True, warmup_days=None,
+                 horizon_days=None):
         """stage_model / disruptions / calibration: paths or dicts. The calibration's
         "pool" (constrained worker pool) is applied to the stage model. `norm` maps
         cycle_key(scenario, level) to {'loss_base': seconds, 'n_decisions': N}; default:

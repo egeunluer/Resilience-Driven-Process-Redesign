@@ -42,10 +42,10 @@
   "goods_receipt": 6384237.3,
   "payment_block": 11788802.4
  },
- "q_mean": 0.8587429481252011,
- "q_daily_sd": 0.015108413821828343,
- "q_daily_p1": 0.8326503565865387,
- "baseline_loss_s_per_day": 12204.609281982619,
+ "q_mean": 0.8489901579215551,
+ "q_daily_sd": 0.015120289292022466,
+ "q_daily_p1": 0.7996665126504882,
+ "baseline_loss_s_per_day": 13047.250355577646,
  "baseline_delay_expiries_per_day": 0.0,
  "loss_base_by_scenario": {}
 }

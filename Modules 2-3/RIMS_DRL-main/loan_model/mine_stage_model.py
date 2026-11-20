@@ -435,6 +435,8 @@ def main():
         with open(os.path.join(repo_root, m['validation_overrides_file'])) as f:
             ov = json.load(f)
         model['arrivals'] = ov.get('arrivals', model['arrivals'])
+        if 'payment_terms' in ov:
+            model['payment_terms'] = ov['payment_terms']
         model['validation_targets'].update(ov.get('validation_targets', {}))
     # simulate a fraction of the real volume (BPIC 2019: 10%), same flow and waits
     model['arrivals']['scale'] = m.get('simulation_scale', 1.0)

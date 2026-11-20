@@ -39,7 +39,12 @@ class Episode:
     `duration_h` fixes the disruption length (None: drawn from the level)."""
 
     def __init__(self, sm, disruption_cfg, scenario, level, seed, cal, policy=None,
-                 duration_h=None, warmup_days=WARMUP_DAYS, horizon_days=HORIZON_DAYS, record=False):
+                 duration_h=None, warmup_days=None, horizon_days=None, record=False):
+        # per-log episode length (disruption config "episode"; BPIC 2019's cycle times are
+        # months), else WARMUP_DAYS / HORIZON_DAYS
+        ep_cfg = disruption_cfg.get('episode', {}) if isinstance(disruption_cfg, dict) else {}
+        warmup_days = warmup_days or ep_cfg.get('warmup_days', WARMUP_DAYS)
+        horizon_days = horizon_days or ep_cfg.get('horizon_days', HORIZON_DAYS)
         self.tr = QTracker(sm.m['deadlines'], sm.m['end_stages'], recover_q=cal['q_mean'],
                            deadline_floor_s=cal['deadline_floor_s'])
         self.sim = sim = Simulator(sm, seed=seed, observers=[self.tr], record=record)
@@ -120,7 +125,7 @@ class Episode:
 
 
 def run_episode(sm, disruption_cfg, scenario, level, seed, cal, policy=do_nothing,
-                duration_h=None, warmup_days=WARMUP_DAYS, horizon_days=HORIZON_DAYS):
+                duration_h=None, warmup_days=None, horizon_days=None):
     """Returns a dict of episode metrics."""
     return Episode(sm, disruption_cfg, scenario, level, seed, cal, policy=policy, duration_h=duration_h,
                    warmup_days=warmup_days, horizon_days=horizon_days).run().result()

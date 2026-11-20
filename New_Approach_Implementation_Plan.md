@@ -1257,6 +1257,53 @@ counts finished items only); relative to finished items the shares match.
 - The episode warm-up (40 d in `loan_model/episode.py`) and horizon (50 d) are too short for this log
   (cycle times of months); both are set in Phase 5 from the harm curves.
 
+**Phase 5 (disruptions), 2026-11-19.** `bpic2019_disruptions.json`: the same three shock types, lengths
+(72–120 h), actions and κ as the loan logs. D1 payment run fails (the transitions to *paid* are blocked;
+items that fail wait for the first run after the restore); D2 vendor channel down (`Record Invoice
+Receipt` blocked); D3 invoice/goods-receipt mismatch surge (invoice → payment block ×1.5, vendor's
+correction delayed 72–168 h). Actions: D1 substitute = manual payment outside the run, escalate = a
+backup AP worker pays by hand; D2 substitute = invoice by e-mail/paper (+24–72 h), escalate = a backup AP
+worker records it; D3 retry = automatic re-match, reassign = front of the block queue, escalate = a
+backup block handler. Episode: warm-up 150 d, horizon 90 d (new `episode` block in the disruption
+config, read by `loan_model/episode.py`).
+
+*First test, stage deadlines only (16 seeds, extra Loss vs twin):* D1 +0.003 ± 0.003, D2 −0.003 ± 0.002,
+D3 −0.007 ± 0.004 Q-days at day 90, no action better than waiting. Deadlines of 34–136 d are not
+reached by a delay of days. *3- and 4-week shocks (test only, user):* D1 +0.13 / +0.27 (substitute
+removes all of it), D2 first *negative* for ~3 months (−0.08 / −0.12 at day 90, the share artefact),
++0.22 / +0.42 only at day 150, D3 ≤ +0.03 — rejected (and lengths must stay the same across logs).
+
+**Option 1 (user, 2026-11-19): payment due date as a second, mined deadline.** The real harm in
+purchase-to-pay is paying after the invoice is due. Mined (`prepare_bpic2019.payment_terms`): due date =
+the vendor's invoice date (`Vendor creates invoice`, 93.6% of items) + payment term. The log has no due
+date, only the paying run: an item ready before run R_(k−1) but paid in R_k became due in (R_(k−1), R_k];
+drawn uniformly there (interval-censored); items ready only after R_(k−1) (13,813) are not used, since
+their own processing may have held them up (this biases the terms slightly towards longer ones).
+Terms p10 / p50 / p90 = 28 / 61 / 103 d (125,452 items); invoice date p50 9.6 d after the PO item.
+Simulator: each item draws its invoice date and due date at arrival from its own stream (disruptions and
+actions never move them; the twin has the same ones); it is paid by the first run once it is ready and
+due. Q: a case is also off track once unpaid 7 d after its due date (= after the first weekly run
+following it; `QTracker.set_case_deadline`). Same Q definition otherwise; in the thesis: "mined stage
+deadlines plus, where the log has one, a real external deadline: offer expiry in BPIC 2017, payment due
+date in BPIC 2019".
+
+- Validation with due dates: cycle time KS 0.073, p50 83.4 vs 78.8 d, p90 129.1 vs 133.1 d (p10 41 vs
+  27 d: the fastest items are slower, consistent with the slightly long terms), open items 5,332 vs
+  5,312, paid / deleted 96.4 / 3.6% (`tmp_loan_training/validate_bpic2019_pool3_due.log`).
+- Q recalibrated: mean 0.849 (was 0.859), daily sd 0.015, p1 0.800.
+- Harm at 72–120 h, 16 seeds (`tmp_loan_training/bpic2019_harm_due_72_120.log`):
+
+| | decisions / episode | extra Loss at day 30 / 90 / 150 (Q-days) | best fixed action vs do-nothing (day 90) |
+|---|---|---|---|
+| D1 payment run | 233 (1 of 16 empty: no run in the outage) | +0.116 / +0.116 / +0.116 (± 0.076) | substitute −0.116 ± 0.076 (all of it), escalate −0.002 |
+| D2 vendor channel | 214 | +0.010 / +0.014 / +0.016 (± 0.006) | none (substitute −0.002 ± 0.004) |
+| D3 mismatch surge | 43 | +0.014 / +0.024 / +0.027 (± 0.006–0.009) | reassign −0.010 ± 0.003; retry +0.012 (worse) |
+
+  All three now do harm with the right sign from the start. D1 is as large as the loan logs' shocks
+  (0.11–0.15) and arrives within 10 days; D2 and D3 are an order of magnitude smaller, as D1/D3 were in
+  BPI 2012 (0.0125 / 0.0107; there handled with a common Loss_base). Horizon 90 d captures ~90% of D2/D3's
+  harm by day 150.
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);

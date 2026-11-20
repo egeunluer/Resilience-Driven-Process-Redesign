@@ -19,6 +19,7 @@ Scope (decisions of 2026-11-19, New_Approach_Implementation_Plan.md):
 import json
 import os
 
+import numpy as np
 import pandas as pd
 from lxml import etree
 
@@ -54,6 +55,63 @@ def load():
     return ev, cat
 
 
+def q101(x):
+    return [round(float(v), 1) for v in np.quantile(np.asarray(x, dtype=float), np.linspace(0, 1, 101))]
+
+
+def payment_terms(ev, m):
+    """Payment due dates (option 1, 2026-11-19). Due date = the vendor's invoice date
+    ('Vendor creates invoice', a date) + the payment term. The log has no due date, only
+    the payment run that paid the item: an item ready (invoice recorded, block removed)
+    before run R_(k-1) but paid only in run R_k became due in (R_(k-1), R_k], so its term
+    is drawn uniformly there, minus its invoice date (interval-censored). Items that
+    became ready only after R_(k-1) may have been held up by their own processing and
+    are not used. Returns the invoice-date offset from the PO-item creation and the
+    term, as quantiles (s)."""
+    rel = m['batch_release']
+    tz = m['timezone']
+    paid = ev[ev['activity'] == rel['activity']]
+    day = paid['time'].dt.tz_convert(tz).dt.date
+    cnt = day.value_counts()
+    run_days = sorted(cnt[cnt >= rel['min_items_per_day']].index)
+    g = paid.groupby(day)['time']
+    run_end = {d: g.get_group(d).max() for d in run_days}
+    first = lambda a: ev[ev['activity'] == a].groupby('case')['time'].min()
+    last = lambda a: ev[ev['activity'] == a].groupby('case')['time'].max()
+    df = pd.DataFrame({'po': first('Create Purchase Order Item'), 'inv': first('Vendor creates invoice'),
+                       'clear': first(rel['activity'])})
+    ready = pd.concat([last('Record Invoice Receipt'), last('Remove Payment Block')], axis=1).max(axis=1)
+    df['ready'] = ready.reindex(df.index)
+    df = df.dropna(subset=['po'])
+    has_inv = df['inv'].notna()
+    df['run'] = df['clear'].dt.tz_convert(tz).dt.date
+    idx = {d: i for i, d in enumerate(run_days)}
+    rng = np.random.default_rng(0)
+    terms, bound = [], 0
+    for r in df[has_inv & df['clear'].notna() & df['ready'].notna()].itertuples():
+        k = idx.get(r.run)
+        if not k:
+            continue
+        prev = run_end[run_days[k - 1]]
+        if r.ready > prev:
+            bound += 1
+            continue
+        due = prev + (r.clear - prev) * rng.random()
+        terms.append((due - r.inv).total_seconds())
+    off = (df.loc[has_inv, 'inv'] - df.loc[has_inv, 'po']).dt.total_seconds()
+    out = {'_doc': payment_terms.__doc__.split('Returns')[0].strip(),
+           'share_with_invoice_date': round(float(has_inv.mean()), 4),
+           'invoice_offset_s': q101(off), 'term_s': q101(terms),
+           'n_terms': len(terms), 'n_ready_bound': bound,
+           'grace_s': 7 * 86400,
+           '_grace': 'paid on time = by the first weekly payment run after the due date: late once unpaid 7 d after it'}
+    print(f"payment terms from {len(terms)} items ({bound} ready only after the previous run, not used); "
+          f"term days p10/p50/p90 {np.percentile(terms, [10, 50, 90]).round(-3) / 86400}; "
+          f"invoice date offset from PO creation days p10/p50/p90 {np.percentile(off, [10, 50, 90]) / 86400}; "
+          f"share with invoice date {has_inv.mean():.3f}")
+    return out
+
+
 def main():
     m = json.load(open(MAP))
     ev, cat = load()
@@ -78,6 +136,7 @@ def main():
                 '_doc': 'creation of the purchase-order item, all items of the category created in 2018'}
 
     ev = ev[ev['case'].isin(st[st < pd.Timestamp(MINE_CREATED_BEFORE, tz='UTC')].index)].reset_index(drop=True)
+    terms = payment_terms(ev, m)
     items = set(m['stage_work_items'].values())
     res = ev['resource'].fillna('NONE')
     automated = res.str.startswith('batch') | (res == 'NONE')
@@ -107,7 +166,7 @@ def main():
     print(f'open items (all items, Mar-Aug 2018, daily at noon): median {int(wip.median())}, '
           f'p10 {int(wip.quantile(.1))}, p90 {int(wip.quantile(.9))}')
     print(f"arrivals: {arrivals['per_day']}/day")
-    json.dump({'arrivals': arrivals,
+    json.dump({'arrivals': arrivals, 'payment_terms': terms,
                'validation_targets': {'arrivals_per_day': arrivals['per_day'],
                                       'open_cases': {'median': int(wip.median()), 'p10': int(wip.quantile(.1)),
                                                      'p90': int(wip.quantile(.9))}}},

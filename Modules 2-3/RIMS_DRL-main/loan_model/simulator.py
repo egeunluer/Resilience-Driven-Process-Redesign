@@ -378,6 +378,18 @@ class Simulator:
             self.cohort.add(cid)
         for o in self.observers:
             o.on_arrival(cid, self.env.now)
+        pt = self.sm.m.get('payment_terms')
+        if pt:
+            # BPIC 2019: due date = vendor's invoice date + payment term (own stream, so
+            # disruptions and actions never move it); late once unpaid grace_s after it
+            r = self._stream(8, cid)
+            u, off, term = r.random(), sample_quantiles(pt['invoice_offset_s'], r), sample_quantiles(pt['term_s'], r)
+            if u < pt['share_with_invoice_date']:
+                c['due'] = self.env.now + off + term
+                for o in self.observers:
+                    f = getattr(o, 'set_case_deadline', None)
+                    if f is not None:
+                        f(cid, c['due'] + pt['grace_s'])
         self.env.process(self._case(cid))
 
     # -------------------------------------------------------------------- case
@@ -440,7 +452,10 @@ class Simulator:
         if self.disruption is not None:
             # a blocked transition (e.g. offer dispatch down) holds the case in this stage
             if self.disruption.blocks_transition(stage, nxt):
-                yield from self._blocked(cid, stage, lambda: self.disruption.blocks_transition(stage, nxt))
+                bypassed = yield from self._blocked(cid, stage, lambda: self.disruption.blocks_transition(stage, nxt))
+                if not bypassed and self.release and nxt == self.release['target']:
+                    # BPIC 2019: the failed payment run's items are paid by the next run
+                    yield self.run_event
             ftype = self.disruption.surge_decision(stage, nxt)
             if ftype:
                 nxt = yield from self._documents_decision(cid, ftype, stage, nxt, exits)
@@ -475,13 +490,23 @@ class Simulator:
             week0 += timedelta(days=7)
             yield self.env.timeout(max(0.0, self._seconds_until(week0)))
 
-    def _released(self, nxt, tr, rng):
+    def _released(self, cid, nxt, tr, rng):
         """Due lag (s) if this visit ends with a batch release (payment run), else None.
         Both draws are made in any case, so the stream's use does not depend on it."""
         if not (self.release and nxt == self.release['target'] and tr.get('due_lag')):
             return None
         u, lag = rng.random(), sample_quantiles(tr['due_lag'], rng)
-        return lag if u < tr.get('run_share', 1.0) else None
+        if u >= tr.get('run_share', 1.0):
+            return None
+        return lag
+
+    def _wait_payable(self, cid, lag):
+        """Wait until the case is payable, then for the next payment run. With a due date
+        (payment terms) it is payable at the due date, or at once if that has passed;
+        otherwise after the mined due lag."""
+        due = self.cases[cid].get('due')
+        yield from self._pause(cid, lag if due is None else max(0.0, due - self.env.now))
+        yield self.run_event
 
     def _visit_body(self, cid, st, tr, nxt=None):
         try:
@@ -498,11 +523,10 @@ class Simulator:
                     yield from self._session(cid, st['work_item'])
             rng = self.cases[cid]['rng']
             k = int(sample_choice(tr['n_sessions'], rng))
-            due = self._released(nxt, tr, rng)
+            due = self._released(cid, nxt, tr, rng)
             if k == 0:
                 if due is not None:
-                    yield from self._pause(cid, due)
-                    yield self.run_event
+                    yield from self._wait_payable(cid, due)
                     return
                 q = tr.get('visit_duration_no_session') or tr['visit_duration']
                 yield from self._pause(cid, sample_quantiles(q, rng))
@@ -513,9 +537,8 @@ class Simulator:
                 if i < k - 1:
                     yield from self._pause(cid, self._wait_s(tr, 'gap', rng))
             if due is not None:
-                # payable after the due lag, paid by the next payment run
-                yield from self._pause(cid, due)
-                yield self.run_event
+                # payable at the due date (or after the due lag), paid by the next run
+                yield from self._wait_payable(cid, due)
                 return
             yield from self._pause(cid, self._wait_s(tr, 'tail', rng))
         except simpy.Interrupt:

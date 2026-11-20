@@ -1,0 +1,197 @@
+{
+ "_doc": "Log-specific disruption scenarios for loan_model/disruptions.py (Phase 5), BPI Challenge 2019 (purchase-to-pay, main item category, 10% scale). The same three shock types as BPIC 2017 / BPI 2012 (D1 dispatch/system outage, D2 contact outage, D3 missing-documents surge), mapped onto this process; same lengths (72-120 h, never seen by the agent), same levels, same action set and costs.",
+ "episode": {
+  "warmup_days": 150,
+  "horizon_days": 90,
+  "_doc": "cycle times are months: open items need ~150 d to settle; the horizon is set from the harm curves (Phase 5)"
+ },
+ "sla_alert": {
+  "_doc": "as in the loan logs",
+  "enabled": true,
+  "failure_type": "sla_risk",
+  "slack_threshold_h": 48
+ },
+ "recovery": {
+  "_doc": "Same actions, costs and generic parameters as the loan logs; the meaning of each action per failure type is in its _doc. Times in working hours for handling/retry, wall-clock hours for vendor-side delays.",
+  "actions": [
+   "do_nothing",
+   "retry",
+   "reassign",
+   "substitute",
+   "escalate"
+  ],
+  "kappa": {
+   "do_nothing": 0.0,
+   "retry": 0.05,
+   "reassign": 0.15,
+   "substitute": 0.2,
+   "escalate": 0.3
+  },
+  "allowed": {
+   "payment_run_outage": [
+    "do_nothing",
+    "substitute",
+    "escalate"
+   ],
+   "vendor_channel_outage": [
+    "do_nothing",
+    "substitute",
+    "escalate"
+   ],
+   "invoice_mismatch": [
+    "do_nothing",
+    "retry",
+    "reassign",
+    "escalate"
+   ],
+   "_sla_risk": "an SLA-risk alert allows the actions of the failure that blocked the case",
+   "_retry": "as in the loan logs: not offered in an outage (a waiting case resumes when the service is back); offered for the mismatch surge (automatic re-match)"
+  },
+  "retry": {
+   "_doc": "invoice mismatch: an automatic re-match after delay_working_h finds the corrected document with documents_success_p, so the item skips the payment block. At most max_per_case retries per item.",
+   "delay_working_h": 1.0,
+   "documents_success_p": 0.4,
+   "max_per_case": 2
+  },
+  "substitute": {
+   "payment_run_outage": {
+    "_doc": "manual (urgent) payment outside the run: the item is paid at once, without waiting for the next run"
+   },
+   "vendor_channel_outage": {
+    "_doc": "the vendor sends the invoice another way (e-mail / paper) and it is recorded by hand: the step is done, but the invoice arrives later",
+    "extra_delay_h": {
+     "uniform": [
+      24,
+      72
+     ]
+    }
+   }
+  },
+  "escalate": {
+   "_doc": "a backup worker does the blocked step by hand: payment run -- an accounts-payable worker pays the item manually; vendor channel -- an accounts-payable worker records the invoice from another channel; mismatch -- a payment-block handler resolves the mismatch directly. Backup workers are real workers of the log outside the top-3 pool (the next ranks for that work item); handling time and success are assumed, as in the loan logs.",
+   "work_items": {
+    "payment_run_outage": "Record Invoice Receipt",
+    "vendor_channel_outage": "Record Invoice Receipt",
+    "invoice_mismatch": "Remove Payment Block"
+   },
+   "team_per_item": 2,
+   "handling_working_h": {
+    "uniform": [
+     0.5,
+     2.0
+    ]
+   },
+   "success_p": 0.95,
+   "chase_wait_factor": {
+    "uniform": [
+     0.3,
+     0.6
+    ]
+   }
+  },
+  "reassign": {
+   "_doc": "invoice mismatch: the item's payment-block work goes to the front of the queue (fastest free qualified worker) and the vendor's correction is chased directly (no extra delay)"
+  }
+ },
+ "scenarios": {
+  "D1_payment_run_outage": {
+   "mechanism": "outage",
+   "failure_type": "payment_run_outage",
+   "blocks": {
+    "transitions": [
+     [
+      "order",
+      "END_paid"
+     ],
+     [
+      "goods_receipt",
+      "END_paid"
+     ],
+     [
+      "invoice",
+      "END_paid"
+     ],
+     [
+      "payment_block",
+      "END_paid"
+     ]
+    ]
+   },
+   "_doc": "D1 (dispatch/system outage): the payment system is down, so a payment run in the outage pays nothing; due items fail and wait for a decision. Left alone they are paid by the first run after the restore.",
+   "levels": {
+    "2": {
+     "duration_h": {
+      "uniform": [
+       72,
+       120
+      ]
+     }
+    }
+   }
+  },
+  "D2_vendor_channel_outage": {
+   "mechanism": "outage",
+   "failure_type": "vendor_channel_outage",
+   "blocks": {
+    "work_items": [
+     "Record Invoice Receipt"
+    ]
+   },
+   "_doc": "D2 (contact outage): the vendor channel (EDI / portal) is down, so incoming invoices cannot be received and recorded.",
+   "levels": {
+    "2": {
+     "duration_h": {
+      "uniform": [
+       72,
+       120
+      ]
+     }
+    }
+   }
+  },
+  "D3_mismatch_surge": {
+   "mechanism": "routing_surge",
+   "failure_type": "invoice_mismatch",
+   "stage": "invoice",
+   "exit": "payment_block",
+   "_doc": "D3 (missing-documents surge): a fault in goods-receipt / invoice data makes more invoices fail the 3-way match and get a payment block (the D3 loop, 19% of invoices normally); the vendor's correction is held up (upload_delay_h, wall-clock, added to the payment-block visit). Each item routed to the block during the surge is a decision.",
+   "levels": {
+    "2": {
+     "magnitude": 0.5,
+     "duration_h": {
+      "uniform": [
+       72,
+       120
+      ]
+     },
+     "upload_delay_h": {
+      "uniform": [
+       72,
+       168
+      ]
+     }
+    }
+   }
+  }
+ },
+ "training_cycle": {
+  "_doc": "One cell per scenario, length drawn per episode (72-120 h), as for the loan logs.",
+  "cells": [
+   [
+    "D1_payment_run_outage",
+    "2",
+    null
+   ],
+   [
+    "D2_vendor_channel_outage",
+    "2",
+    null
+   ],
+   [
+    "D3_mismatch_surge",
+    "2",
+    null
+   ]
+  ]
+ }
+}

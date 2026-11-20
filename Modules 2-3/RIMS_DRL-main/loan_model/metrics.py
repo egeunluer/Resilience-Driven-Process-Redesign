@@ -62,6 +62,7 @@ class QTracker:
         self.off_since = {}      # id -> g when its current off-track spell began
         self.expired_at = {}     # id -> g at its expiry
         self.spells = None       # log_spells(): id -> [(t_on, g_on, t_off, g_off)] of closed spells
+        self.case_deadline = {}  # id -> absolute deadline of the case (BPIC 2019: due date + grace)
 
     # ---------------------------------------------------------------- state
     @property
@@ -107,6 +108,9 @@ class QTracker:
             self._close(cid)
         c[1], c[2] = stage, c[2] + 1
         cross = (c[0] if self.mode == 'age' else t) + self.deadline.get(stage, float('inf'))
+        # a case deadline (payment due date) applies in every stage: off track at the
+        # earlier of the two
+        cross = min(cross, self.case_deadline.get(cid, float('inf')))
         c[3] = t >= cross
         if c[3]:
             self.off += 1
@@ -117,6 +121,11 @@ class QTracker:
             heapq.heappush(self.heap, (cross, cid, c[2]))
 
     # ------------------------------------------------------------ observer
+    def set_case_deadline(self, cid, t):
+        """An absolute deadline for one case in addition to the stage deadlines (BPIC 2019:
+        paid by the first payment run after the due date). Set at arrival."""
+        self.case_deadline[cid] = float(t)
+
     def on_arrival(self, cid, t):
         self.advance(t)
         self.case[cid] = [t, None, 0, False]
@@ -133,6 +142,7 @@ class QTracker:
     def on_end(self, cid, t):
         self.advance(t)
         c = self.case.pop(cid)
+        self.case_deadline.pop(cid, None)
         self.hits.pop(cid, None)
         self.open -= 1
         if c[3]:
