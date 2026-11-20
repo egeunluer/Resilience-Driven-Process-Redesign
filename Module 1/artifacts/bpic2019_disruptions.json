@@ -5,6 +5,10 @@
   "horizon_days": 90,
   "_doc": "cycle times are months: open items need ~150 d to settle; the horizon is set from the harm curves (Phase 5)"
  },
+ "observation": {
+  "open_cases_scale": 10000,
+  "_doc": "divisor of the open-cases feature (~5,000 open items at the 10% scale; the loan logs use 4,000)"
+ },
  "sla_alert": {
   "_doc": "as in the loan logs",
   "enabled": true,

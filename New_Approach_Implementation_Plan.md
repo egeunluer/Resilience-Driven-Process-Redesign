@@ -1304,6 +1304,21 @@ date in BPIC 2019".
   BPI 2012 (0.0125 / 0.0107; there handled with a common Loss_base). Horizon 90 d captures ~90% of D2/D3's
   harm by day 150.
 
+**Phase 6 (recovery actions)** is part of the disruption config above (actions, masks, escalation teams
+from the next-ranked workers outside the pool, κ unchanged); the smoke tests exercised every action.
+
+**Phase 7 (environment), 2026-11-20.** `LoanEnv` runs on BPIC 2019 unchanged in structure: 6 smoke
+episodes with random actions (twin on, β = 0.5) took 7–9 s each including the twin (BPIC 2017 ~12 s),
+6–304 decisions per episode. Three observation features were fixed, without changing the loan logs'
+observations:
+- `open_cases` was stuck at 1 (~5,000 open items / 4,000): the divisor is now per log (disruption
+  config `observation.open_cases_scale`, BPIC 2019 10,000, default 4,000) → mean 0.52;
+- `arrivals_24h` compared simulated arrivals with the unscaled normal rate (0.04): now × `arrivals.scale`
+  → mean 0.42 (normal day ≈ 1/3 of the 3× reference, as in the loan logs);
+- `expiry_left` (time to the case's external deadline, /31 d) was always 1: it now also reads the
+  payment due date + grace (BPIC 2019; the offer expiry in BPIC 2017) → −1 when overdue, 1 when more
+  than a month away (75% of decisions).
+
 ### Phase 10 — Distillation ⬜
 - **`distill_policy.py`:**
   - one decision tree per failure type (depth 3–5);

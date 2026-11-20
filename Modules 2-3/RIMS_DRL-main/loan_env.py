@@ -122,7 +122,13 @@ class LoanEnv(Env):
         self.stages = [s for s in self.sm.m['stages'] if s not in self.sm.end_stages]
         self.scenarios = list(self.cfg['scenarios'])
         self.deadline = self.cal['deadlines_s']
-        self.normal_daily_arrivals = sum(self.sm.m['arrivals']['rates_per_hour_of_week']) / 7
+        self.normal_daily_arrivals = (sum(self.sm.m['arrivals']['rates_per_hour_of_week']) / 7
+                                      * self.sm.m['arrivals'].get('scale', 1.0))
+        # observation scales per log (disruption config "observation"); defaults = the
+        # loan logs' values, so their observations are unchanged
+        self.open_scale = self.cfg.get('observation', {}).get('open_cases_scale', 4000)
+        pt = self.sm.m.get('payment_terms')
+        self.due_grace = pt['grace_s'] if pt else 0.0
         self.action_space = spaces.Discrete(len(self.actions))
         self.obs_names = self._obs_names()
         self.observation_space = spaces.Box(-1.0, 1.0, shape=(len(self.obs_names),), dtype=np.float32)
@@ -345,7 +351,7 @@ class LoanEnv(Env):
             float(((slacks >= 2 * DAY) & (slacks < 7 * DAY)).sum()) / n_blk if len(slacks) else 0.0,
             (tr.q - 0.85) / 0.15,                       # Q in [0.7, 1] -> [-1, 1] (normal ~0.90)
             (tr.rolling_q(now) - 0.85) / 0.15,
-            min(1.0, tr.open / 4000),
+            min(1.0, tr.open / self.open_scale),
             # demand: arrivals of the last 24 h against 3x a normal day; work waiting for a worker
             min(1.0, sum(n for _, n in sim.arrival_log) / (3 * self.normal_daily_arrivals)),
             min(1.0, sum(len(q) for q in sim.queues.values()) / 200),
@@ -355,7 +361,11 @@ class LoanEnv(Env):
         g += [float(d.stage == s) for s in self.stages]
         dl = self.deadline.get(d.stage)
         slack = (c['arrival'] + dl - now) / dl if dl else 1.0
+        # time left until the case's external deadline: offer expiry (BPIC 2017) or
+        # payment due date + grace (BPIC 2019)
         exp = c.get('expiry_at')
+        if exp is None and 'due' in c:
+            exp = c['due'] + self.due_grace
         g += [
             float(np.clip(slack, -1, 1)),
             min(1.0, (now - c['arrival']) / (60 * DAY)),
