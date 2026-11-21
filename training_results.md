@@ -314,3 +314,79 @@ Bold: the 95% interval excludes 0. Paired t-test / Wilcoxon p-values agree with 
 - **Training converged early.** The evaluation score stayed at 0.40–0.42 from 30k steps on; the later checkpoints (61k, 92k, final) were not benchmarked.
 - **Own Loss_base** per shock type (unlike entry 2): BPIC 2019's small shocks do not blow up the per-shock scores, while a common Loss_base (0.0546) would let D1's variance dominate the overall score (D1 −1.6 ± 0.8, D2/D3 ≈ 1 ± 0.04 for the baselines).
 - Results: `tmp_loan_training/bpic2019_bench_ppo30k_s200x64.json` (agent, do-nothing, rule) and `bpic2019_bench_baselines_s200x64.json` (all baselines, same seeds).
+
+---
+
+## Comparison across the three logs
+
+### Agent vs the strongest baseline
+
+The strongest baseline is the one with the best objective in that cell, measured on the same episodes as the agent. Differences are paired (same episodes), with 95% intervals; negative = agent better. 64 episodes per shock type in every log. In BPI 2012 D1 the strongest baseline on the same episodes is the rule: always-substitute (0.287) looked better only because it ran on 16 episodes (seeds 200–215), where the rule scored 0.207 and the agent 0.194.
+
+**Agent significantly better**
+
+| Log | Shock | Strongest baseline | Agent − baseline |
+|---|---|---|---|
+| BPIC 2017 | D2 | rule | −0.157 ± 0.039 |
+| BPIC 2017 | Overall | rule | −0.062 ± 0.024 |
+| BPIC 2019 | D3 | always reassign | −0.090 ± 0.016 |
+| BPIC 2019 | Overall | rule | −0.222 ± 0.058 |
+
+**Agent better, not significantly**
+
+| Log | Shock | Strongest baseline | Agent − baseline |
+|---|---|---|---|
+| BPIC 2017 | D1 | always substitute | −0.009 ± 0.015 |
+| BPIC 2017 | D3 | rule | −0.016 ± 0.052 |
+| BPI 2012 | D1 | rule | −0.013 ± 0.118 |
+| BPI 2012 | D2 | rule | −0.072 ± 0.191 |
+| BPIC 2019 | D2 | rule | −0.005 ± 0.038 |
+
+**Agent significantly worse**
+
+| Log | Shock | Strongest baseline | Agent − baseline |
+|---|---|---|---|
+| BPI 2012 | D3 | rule | +0.819 ± 0.247 |
+| BPI 2012 | Overall | rule | +0.244 ± 0.125 |
+| BPIC 2019 | D1 | rule | +0.031 ± 0.008 |
+
+### Reading the intervals
+
+Significance is decided by the interval of the paired difference, not by whether one policy's mean lies inside the other's interval. Each policy's own interval mostly reflects how hard the episodes are (disruption length, onset in a busy week), and that difficulty is shared: every policy runs on the same episodes with the same random numbers. The paired difference cancels the shared part.
+- BPIC 2019 D3: the separate intervals overlap (agent 0.611 ± 0.061, always reassign 0.701 ± 0.056), but the paired difference is −0.090 ± 0.016 (p ≈ 10⁻¹⁶).
+- BPIC 2019 D1: both intervals are about ± 0.32, yet the rule is better by 0.031 ± 0.008.
+
+Non-overlapping separate intervals do imply a significant difference; overlapping ones do not imply the opposite.
+
+### Diagnosed reasons
+
+**Always-substitute appears to beat the rule and the agent**
+- **BPI 2012 D1: an artefact of mixed episode sets** (see above). On the same 16 episodes: always substitute 0.287, rule 0.207, agent 0.194.
+- **In D1, substituting is the right action for almost every case**, so everything that substitutes a lot scores about the same. Waiting costs the whole remaining outage (in BPIC 2019 also the wait for the next weekly payment run); substituting removes the wait at once (online offer with 20% rework in the loan logs, manual payment in BPIC 2019). BPIC 2017: rule − always substitute +0.005 ± 0.007, agent − always substitute −0.009 ± 0.015. BPIC 2019: the agent substitutes every item, so its episodes equal always-substitute's exactly.
+- **The one real gap is BPIC 2019 D1**, where the rule beats both (+0.031 ± 0.008): it leaves non-urgent items for the next payment run and saves the substitute cost (κ = 0.20).
+
+**The agent fails in BPI 2012 D3**
+- It never retries; per episode it reassigns 56.9 cases and escalates 17.8. The rule retries 56.3 times and scores 0.054.
+- The per-case reward ranks reassign above retry in this log (reward-level D3 check): the reassigned case's own gain counts in full, while the delay it causes the cases it jumps ahead of only enters the shared term (β = 0.5, diluted and noisy).
+- Not a lack of data or training: D3 weighted 3× in training and 100k more steps at learning rate 1·10⁻⁴ left the D3 decisions unchanged.
+- BPI 2012 trains without an escalation shadow price (BPIC 2017 D3: 1.19), so the agent escalates more, although always-escalate is worse than do-nothing in this shock (1.027). Its cost ratio, 0.210, is the highest in the cell, and it is worse even than always-reassign (+0.315 ± 0.289, 16 paired episodes).
+
+**The agent beats every baseline in BPIC 2017 D2**
+- It substitutes (written contact instead of a call) for 301.3 cases per episode, escalates 28.8 and leaves 599.1 waiting. The rule substitutes only urgent cases (30.1; objective 0.976); always-substitute is worse than do-nothing (1.102), because for many cases the written reply's 24–72 h delay is longer than the remaining outage, and each substitute costs 0.20.
+- The gain therefore comes from choosing which cases to substitute: neither all nor only the urgent ones.
+
+**Retry hurts in BPIC 2019 D3, helps in the loan logs**
+- BPIC 2019: always retry 1.382; the rule retries non-urgent items and scores 1.304. The agent never retries, reassigns about a third of the items (14.1 per episode) and beats always-reassign at a third of its cost (cost ratio 0.049 vs 0.154).
+- Loan logs: every case routed to the incomplete loop during the surge is a decision, including those that would have gone there anyway (59% of validations in BPIC 2017). A successful retry (40%) skips the loop, so the process ends better than without the disruption (loss ratio < 0 in BPIC 2017 D3).
+
+### Open questions (not yet tested)
+
+| Question | Hypothesis | Test |
+|---|---|---|
+| Why does the agent not learn the rule's cost saving in BPIC 2019 D1? | The gain is tiny per decision (0.03 over ~266 decisions) next to the Loss noise; training stopped improving after ~30k steps | Per-case reward of substituting a non-urgent item vs leaving it |
+| Why does the same reward make the agent retry in BPIC 2017 but not in BPI 2012? | (a) slower incomplete loop in 2012 (median visit 2.0 d vs 0.9 d), so reassign's own gain is larger; (b) smaller worker pool, so queue jumping hurts others more; (c) fewer D3 decisions (66 vs 286 per episode), so retry's shared benefit is noisier | Per-case reward and the delay reassign causes other cases, in both logs |
+| Why is escalation harmful in BPI 2012 D3? | Backup workers are often unavailable, so escalated cases wait | Waiting and handling times of escalations |
+| What drives the agent's D2 choice in BPIC 2017? | Time since onset (early in a 72–120 h outage substituting pays, late waiting does); call type | Substitute share vs hours since onset; decision tree on the D2 decisions (Phase 10) |
+| Why does the D2 advantage not carry over to BPIC 2019 and BPI 2012? | — | Same analysis on those logs |
+| Why does avoiding the payment block not help in BPIC 2019 D3? | A successful retry or escalation sends the item to the stage's other exits by their mined probabilities: in the loan logs mostly *accepted* (median 0.7 d), in BPIC 2019 mostly the wait for payment (invoice → paid, median 42 d). **A:** measurement artefact: the payment-block stage has a looser deadline (136 d) than the invoice stage (124 d), so a blocked item stays on track longer; **B:** the re-routed item starts a fresh invoice → paid wait that is longer than the route through the block | Cycle times and on-track status of retried vs non-retried items; if A holds, it is a limitation of stage deadlines and also explains always-escalate (1.092) and greedy (1.249) |
+| The BPI 2012 always-* baselines | Run on 16 episodes only | Rerun on 64 episodes |
